@@ -2844,20 +2844,6 @@ static bool mlxsw_sp_nexthop4_ipip_type(const struct mlxsw_sp *mlxsw_sp,
 	       mlxsw_sp_netdev_ipip_type(mlxsw_sp, dev, p_ipipt);
 }
 
-static void mlxsw_sp_nexthop_type_fini(struct mlxsw_sp *mlxsw_sp,
-				       struct mlxsw_sp_nexthop *nh)
-{
-	switch (nh->type) {
-	case MLXSW_SP_NEXTHOP_TYPE_ETH:
-		mlxsw_sp_nexthop_neigh_fini(mlxsw_sp, nh);
-		mlxsw_sp_nexthop_rif_fini(nh);
-		break;
-	case MLXSW_SP_NEXTHOP_TYPE_IPIP:
-		mlxsw_sp_nexthop_ipip_fini(mlxsw_sp, nh);
-		break;
-	}
-}
-
 static int mlxsw_sp_nexthop4_type_init(struct mlxsw_sp *mlxsw_sp,
 				       struct mlxsw_sp_nexthop *nh,
 				       struct fib_nh *fib_nh)
@@ -2890,6 +2876,20 @@ static int mlxsw_sp_nexthop4_type_init(struct mlxsw_sp *mlxsw_sp,
 err_neigh_init:
 	mlxsw_sp_nexthop_rif_fini(nh);
 	return err;
+}
+
+static void mlxsw_sp_nexthop_type_fini(struct mlxsw_sp *mlxsw_sp,
+				       struct mlxsw_sp_nexthop *nh)
+{
+	switch (nh->type) {
+	case MLXSW_SP_NEXTHOP_TYPE_ETH:
+		mlxsw_sp_nexthop_neigh_fini(mlxsw_sp, nh);
+		mlxsw_sp_nexthop_rif_fini(nh);
+		break;
+	case MLXSW_SP_NEXTHOP_TYPE_IPIP:
+		mlxsw_sp_nexthop_ipip_fini(mlxsw_sp, nh);
+		break;
+	}
 }
 
 static void mlxsw_sp_nexthop4_type_fini(struct mlxsw_sp *mlxsw_sp,
