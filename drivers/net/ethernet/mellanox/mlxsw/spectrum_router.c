@@ -2844,19 +2844,21 @@ static bool mlxsw_sp_nexthop4_ipip_type(const struct mlxsw_sp *mlxsw_sp,
 	       mlxsw_sp_netdev_ipip_type(mlxsw_sp, dev, p_ipipt);
 }
 
-static int mlxsw_sp_nexthop4_type_init(struct mlxsw_sp *mlxsw_sp,
-				       struct mlxsw_sp_nexthop *nh,
-				       struct fib_nh *fib_nh)
+static int mlxsw_sp_nexthop_type_init(struct mlxsw_sp *mlxsw_sp,
+				      struct mlxsw_sp_nexthop *nh,
+				      struct net_device *dev,
+				      bool is_ipip,
+				      enum mlxsw_sp_ipip_type ipipt,
+				      enum mlxsw_sp_l3proto proto,
+				      const void *gw_addr,
+				      size_t gw_addr_size)
 {
 	struct mlxsw_sp_router *router = mlxsw_sp->router;
-	struct net_device *dev = fib_nh->nh_dev;
-	enum mlxsw_sp_ipip_type ipipt;
 	struct mlxsw_sp_rif *rif;
 	int err;
 
-	if (mlxsw_sp_nexthop4_ipip_type(mlxsw_sp, fib_nh, &ipipt) &&
-	    router->ipip_ops_arr[ipipt]->can_offload(mlxsw_sp, dev,
-						     MLXSW_SP_L3_PROTO_IPV4)) {
+	if (is_ipip &&
+	    router->ipip_ops_arr[ipipt]->can_offload(mlxsw_sp, dev, proto)) {
 		nh->type = MLXSW_SP_NEXTHOP_TYPE_IPIP;
 		return mlxsw_sp_nexthop_ipip_init(mlxsw_sp, ipipt, nh, dev);
 	}
@@ -2890,6 +2892,21 @@ static void mlxsw_sp_nexthop_type_fini(struct mlxsw_sp *mlxsw_sp,
 		mlxsw_sp_nexthop_ipip_fini(mlxsw_sp, nh);
 		break;
 	}
+}
+
+static int mlxsw_sp_nexthop4_type_init(struct mlxsw_sp *mlxsw_sp,
+				       struct mlxsw_sp_nexthop *nh,
+				       struct fib_nh *fib_nh)
+{
+	struct net_device *dev = fib_nh->nh_dev;
+	enum mlxsw_sp_ipip_type ipipt;
+	bool is_ipip;
+
+	is_ipip = mlxsw_sp_nexthop4_ipip_type(mlxsw_sp, fib_nh, &ipipt);
+	return mlxsw_sp_nexthop_type_init(mlxsw_sp, nh, dev, is_ipip, ipipt,
+					  MLXSW_SP_L3_PROTO_IPV4,
+					  &fib_nh->nh_gw,
+					  sizeof(fib_nh->nh_gw));
 }
 
 static void mlxsw_sp_nexthop4_type_fini(struct mlxsw_sp *mlxsw_sp,
@@ -4134,34 +4151,15 @@ static int mlxsw_sp_nexthop6_type_init(struct mlxsw_sp *mlxsw_sp,
 				       struct mlxsw_sp_nexthop *nh,
 				       const struct rt6_info *rt)
 {
-	struct mlxsw_sp_router *router = mlxsw_sp->router;
 	struct net_device *dev = rt->dst.dev;
 	enum mlxsw_sp_ipip_type ipipt;
-	struct mlxsw_sp_rif *rif;
-	int err;
+	bool is_ipip;
 
-	if (mlxsw_sp_nexthop6_ipip_type(mlxsw_sp, rt, &ipipt) &&
-	    router->ipip_ops_arr[ipipt]->can_offload(mlxsw_sp, dev,
-						     MLXSW_SP_L3_PROTO_IPV6)) {
-		nh->type = MLXSW_SP_NEXTHOP_TYPE_IPIP;
-		return mlxsw_sp_nexthop_ipip_init(mlxsw_sp, ipipt, nh, dev);
-	}
-
-	nh->type = MLXSW_SP_NEXTHOP_TYPE_ETH;
-	rif = mlxsw_sp_rif_find_by_dev(mlxsw_sp, dev);
-	if (!rif)
-		return 0;
-	mlxsw_sp_nexthop_rif_init(nh, rif);
-
-	err = mlxsw_sp_nexthop_neigh_init(mlxsw_sp, nh);
-	if (err)
-		goto err_nexthop_neigh_init;
-
-	return 0;
-
-err_nexthop_neigh_init:
-	mlxsw_sp_nexthop_rif_fini(nh);
-	return err;
+	is_ipip = mlxsw_sp_nexthop6_ipip_type(mlxsw_sp, rt, &ipipt);
+	return mlxsw_sp_nexthop_type_init(mlxsw_sp, nh, dev, is_ipip, ipipt,
+					  MLXSW_SP_L3_PROTO_IPV6,
+					  &rt->rt6i_gateway,
+					  sizeof(rt->rt6i_gateway));
 }
 
 static void mlxsw_sp_nexthop6_type_fini(struct mlxsw_sp *mlxsw_sp,
