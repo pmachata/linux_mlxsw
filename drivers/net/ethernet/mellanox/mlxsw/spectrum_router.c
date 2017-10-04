@@ -1377,16 +1377,13 @@ static void mlxsw_sp_netdevice_ipip_ol_down_event(struct mlxsw_sp *mlxsw_sp,
 		mlxsw_sp_ipip_entry_demote_decap(mlxsw_sp, ipip_entry);
 }
 
-static int mlxsw_sp_netdevice_ipip_ol_vrf_event(struct mlxsw_sp *mlxsw_sp,
-						struct net_device *ol_dev)
+static int
+mlxsw_sp_netdevice_ipip_vrf_event(struct mlxsw_sp *mlxsw_sp,
+				  struct mlxsw_sp_ipip_entry *ipip_entry)
 {
+	struct net_device *ol_dev = ipip_entry->ol_dev;
 	struct mlxsw_sp_fib_entry *decap_fib_entry;
-	struct mlxsw_sp_ipip_entry *ipip_entry;
 	struct mlxsw_sp_rif_ipip_lb *lb_rif;
-
-	ipip_entry = mlxsw_sp_ipip_entry_find_by_ol_dev(mlxsw_sp, ol_dev);
-	if (!ipip_entry)
-		return 0;
 
 	/* When a tunneling device is moved to a different VRF, we need to
 	 * update the backing loopback. Since RIFs can't be edited, we need to
@@ -1414,6 +1411,17 @@ static int mlxsw_sp_netdevice_ipip_ol_vrf_event(struct mlxsw_sp *mlxsw_sp,
 	}
 
 	return 0;
+}
+
+static int mlxsw_sp_netdevice_ipip_ol_vrf_event(struct mlxsw_sp *mlxsw_sp,
+						struct net_device *ol_dev)
+{
+	struct mlxsw_sp_ipip_entry *ipip_entry =
+		mlxsw_sp_ipip_entry_find_by_ol_dev(mlxsw_sp, ol_dev);
+
+	if (!ipip_entry)
+		return 0;
+	return mlxsw_sp_netdevice_ipip_vrf_event(mlxsw_sp, ipip_entry);
 }
 
 int
