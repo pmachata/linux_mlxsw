@@ -69,12 +69,31 @@ static u32 mlxsw_sp_ipip_netdev_okey(const struct net_device *ol_dev)
 }
 
 static int
+mlxsw_sp_ipip_config_tigcr_once(struct mlxsw_sp *mlxsw_sp)
+{
+	char tigcr_pl[MLXSW_REG_TIGCR_LEN];
+	static bool done;
+
+	if (likely(done))
+		return 0;
+	done = true;
+
+	mlxsw_reg_tigcr_pack(tigcr_pl, true, 0);
+	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(tigcr), tigcr_pl);
+}
+
+static int
 mlxsw_sp_ipip_nexthop_update_gre4(struct mlxsw_sp *mlxsw_sp, u32 adj_index,
 				  struct mlxsw_sp_ipip_entry *ipip_entry)
 {
 	u16 rif_index = mlxsw_sp_ipip_lb_rif_index(ipip_entry->ol_lb);
 	__be32 daddr4 = mlxsw_sp_ipip_netdev_daddr4(ipip_entry->ol_dev);
 	char ratr_pl[MLXSW_REG_RATR_LEN];
+	int err;
+
+	err = mlxsw_sp_ipip_config_tigcr_once(mlxsw_sp);
+	if (err)
+		return err;
 
 	mlxsw_reg_ratr_pack(ratr_pl, MLXSW_REG_RATR_OP_WRITE_WRITE_ENTRY,
 			    true, MLXSW_REG_RATR_TYPE_IPIP,
@@ -138,6 +157,10 @@ static int mlxsw_sp_ipip_fib_entry_op_gre4(struct mlxsw_sp *mlxsw_sp,
 	u16 ul_vr_id = mlxsw_sp_ipip_lb_ul_vr_id(ipip_entry->ol_lb);
 	__be32 dip;
 	int err;
+
+	err = mlxsw_sp_ipip_config_tigcr_once(mlxsw_sp);
+	if (err)
+		return err;
 
 	err = mlxsw_sp_ipip_fib_entry_op_gre4_rtdp(mlxsw_sp, tunnel_index,
 						   ipip_entry);
