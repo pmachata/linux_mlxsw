@@ -1312,8 +1312,8 @@ static void mlxsw_sp_netdevice_ipip_ol_unreg_event(struct mlxsw_sp *mlxsw_sp,
 		mlxsw_sp_ipip_entry_destroy(mlxsw_sp, ipip_entry);
 }
 
-static int mlxsw_sp_netdevice_ipip_ol_up_event(struct mlxsw_sp *mlxsw_sp,
-					       struct net_device *ol_dev)
+static void mlxsw_sp_netdevice_ipip_ol_up_event(struct mlxsw_sp *mlxsw_sp,
+						struct net_device *ol_dev)
 {
 	struct mlxsw_sp_fib_entry *decap_fib_entry;
 	struct mlxsw_sp_ipip_entry *ipip_entry;
@@ -1327,7 +1327,6 @@ static int mlxsw_sp_netdevice_ipip_ol_up_event(struct mlxsw_sp *mlxsw_sp,
 							  decap_fib_entry);
 	}
 
-	return 0;
 }
 
 static void
@@ -1400,7 +1399,8 @@ mlxsw_sp_netdevice_ipip_ol_event(struct mlxsw_sp *mlxsw_sp,
 		mlxsw_sp_netdevice_ipip_ol_unreg_event(mlxsw_sp, ol_dev);
 		return 0;
 	case NETDEV_UP:
-		return mlxsw_sp_netdevice_ipip_ol_up_event(mlxsw_sp, ol_dev);
+		mlxsw_sp_netdevice_ipip_ol_up_event(mlxsw_sp, ol_dev);
+		return 0;
 	case NETDEV_DOWN:
 		mlxsw_sp_netdevice_ipip_ol_down_event(mlxsw_sp, ol_dev);
 		return 0;
