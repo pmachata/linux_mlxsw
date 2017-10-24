@@ -336,6 +336,8 @@ devlink_sb_tc_index_get_from_info(struct devlink_sb *devlink_sb,
 #define DEVLINK_NL_FLAG_NEED_PORT	BIT(1)
 #define DEVLINK_NL_FLAG_NEED_SB		BIT(2)
 #define DEVLINK_NL_FLAG_LOCK_PORTS	BIT(3)
+#define DEVLINK_NL_FLAG_NO_LOCK		BIT(4)
+
 	/* port is not needed but we need to ensure they don't
 	 * change in the middle of command
 	 */
@@ -380,15 +382,24 @@ static int devlink_nl_pre_doit(const struct genl_ops *ops,
 		}
 		info->user_ptr[1] = devlink_sb;
 	}
+	if (!(ops->internal_flags & DEVLINK_NL_FLAG_NO_LOCK))
+		mutex_lock(&devlink->lock);
+
 	return 0;
 }
 
 static void devlink_nl_post_doit(const struct genl_ops *ops,
 				 struct sk_buff *skb, struct genl_info *info)
 {
+	struct devlink *devlink;
+
+	devlink = devlink_get_from_info(info);
+
 	if (ops->internal_flags & DEVLINK_NL_FLAG_NEED_PORT ||
 	    ops->internal_flags & DEVLINK_NL_FLAG_LOCK_PORTS)
 		mutex_unlock(&devlink_port_mutex);
+	if (!(ops->internal_flags & DEVLINK_NL_FLAG_NO_LOCK))
+		mutex_unlock(&devlink->lock);
 	mutex_unlock(&devlink_mutex);
 }
 
@@ -801,6 +812,7 @@ static int devlink_nl_cmd_sb_get_dumpit(struct sk_buff *msg,
 	list_for_each_entry(devlink, &devlink_list, list) {
 		if (!net_eq(devlink_net(devlink), sock_net(msg->sk)))
 			continue;
+		mutex_lock(&devlink->lock);
 		list_for_each_entry(devlink_sb, &devlink->sb_list, list) {
 			if (idx < start) {
 				idx++;
@@ -811,10 +823,13 @@ static int devlink_nl_cmd_sb_get_dumpit(struct sk_buff *msg,
 						 NETLINK_CB(cb->skb).portid,
 						 cb->nlh->nlmsg_seq,
 						 NLM_F_MULTI);
-			if (err)
+			if (err) {
+				mutex_unlock(&devlink->lock);
 				goto out;
+			}
 			idx++;
 		}
+		mutex_unlock(&devlink->lock);
 	}
 out:
 	mutex_unlock(&devlink_mutex);
@@ -935,14 +950,18 @@ static int devlink_nl_cmd_sb_pool_get_dumpit(struct sk_buff *msg,
 		if (!net_eq(devlink_net(devlink), sock_net(msg->sk)) ||
 		    !devlink->ops || !devlink->ops->sb_pool_get)
 			continue;
+		mutex_lock(&devlink->lock);
 		list_for_each_entry(devlink_sb, &devlink->sb_list, list) {
 			err = __sb_pool_get_dumpit(msg, start, &idx, devlink,
 						   devlink_sb,
 						   NETLINK_CB(cb->skb).portid,
 						   cb->nlh->nlmsg_seq);
-			if (err && err != -EOPNOTSUPP)
+			if (err && err != -EOPNOTSUPP) {
+				mutex_unlock(&devlink->lock);
 				goto out;
+			}
 		}
+		mutex_unlock(&devlink->lock);
 	}
 out:
 	mutex_unlock(&devlink_mutex);
@@ -2695,6 +2714,7 @@ struct devlink *devlink_alloc(const struct devlink_ops *ops, size_t priv_size)
 	INIT_LIST_HEAD(&devlink->sb_list);
 	INIT_LIST_HEAD_RCU(&devlink->dpipe_table_list);
 	INIT_LIST_HEAD(&devlink->resource_list);
+	mutex_init(&devlink->lock);
 	return devlink;
 }
 EXPORT_SYMBOL_GPL(devlink_alloc);
@@ -2858,7 +2878,7 @@ int devlink_sb_register(struct devlink *devlink, unsigned int sb_index,
 	struct devlink_sb *devlink_sb;
 	int err = 0;
 
-	mutex_lock(&devlink_mutex);
+	mutex_lock(&devlink->lock);
 	if (devlink_sb_index_exists(devlink, sb_index)) {
 		err = -EEXIST;
 		goto unlock;
@@ -2877,7 +2897,7 @@ int devlink_sb_register(struct devlink *devlink, unsigned int sb_index,
 	devlink_sb->egress_tc_count = egress_tc_count;
 	list_add_tail(&devlink_sb->list, &devlink->sb_list);
 unlock:
-	mutex_unlock(&devlink_mutex);
+	mutex_unlock(&devlink->lock);
 	return err;
 }
 EXPORT_SYMBOL_GPL(devlink_sb_register);
@@ -2886,11 +2906,11 @@ void devlink_sb_unregister(struct devlink *devlink, unsigned int sb_index)
 {
 	struct devlink_sb *devlink_sb;
 
-	mutex_lock(&devlink_mutex);
+	mutex_lock(&devlink->lock);
 	devlink_sb = devlink_sb_get_by_index(devlink, sb_index);
 	WARN_ON(!devlink_sb);
 	list_del(&devlink_sb->list);
-	mutex_unlock(&devlink_mutex);
+	mutex_unlock(&devlink->lock);
 	kfree(devlink_sb);
 }
 EXPORT_SYMBOL_GPL(devlink_sb_unregister);
@@ -2906,9 +2926,9 @@ EXPORT_SYMBOL_GPL(devlink_sb_unregister);
 int devlink_dpipe_headers_register(struct devlink *devlink,
 				   struct devlink_dpipe_headers *dpipe_headers)
 {
-	mutex_lock(&devlink_mutex);
+	mutex_lock(&devlink->lock);
 	devlink->dpipe_headers = dpipe_headers;
-	mutex_unlock(&devlink_mutex);
+	mutex_unlock(&devlink->lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(devlink_dpipe_headers_register);
@@ -2922,9 +2942,9 @@ EXPORT_SYMBOL_GPL(devlink_dpipe_headers_register);
  */
 void devlink_dpipe_headers_unregister(struct devlink *devlink)
 {
-	mutex_lock(&devlink_mutex);
+	mutex_lock(&devlink->lock);
 	devlink->dpipe_headers = NULL;
-	mutex_unlock(&devlink_mutex);
+	mutex_unlock(&devlink->lock);
 }
 EXPORT_SYMBOL_GPL(devlink_dpipe_headers_unregister);
 
@@ -2990,9 +3010,9 @@ int devlink_dpipe_table_register(struct devlink *devlink,
 	table->priv = priv;
 	table->counter_control_extern = counter_control_extern;
 
-	mutex_lock(&devlink_mutex);
+	mutex_lock(&devlink->lock);
 	list_add_tail_rcu(&table->list, &devlink->dpipe_table_list);
-	mutex_unlock(&devlink_mutex);
+	mutex_unlock(&devlink->lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(devlink_dpipe_table_register);
@@ -3008,17 +3028,17 @@ void devlink_dpipe_table_unregister(struct devlink *devlink,
 {
 	struct devlink_dpipe_table *table;
 
-	mutex_lock(&devlink_mutex);
+	mutex_lock(&devlink->lock);
 	table = devlink_dpipe_table_find(&devlink->dpipe_table_list,
 					 table_name);
 	if (!table)
 		goto unlock;
 	list_del_rcu(&table->list);
-	mutex_unlock(&devlink_mutex);
+	mutex_unlock(&devlink->lock);
 	kfree_rcu(table, rcu);
 	return;
 unlock:
-	mutex_unlock(&devlink_mutex);
+	mutex_unlock(&devlink->lock);
 }
 EXPORT_SYMBOL_GPL(devlink_dpipe_table_unregister);
 
