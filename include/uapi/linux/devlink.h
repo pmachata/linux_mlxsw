@@ -69,6 +69,8 @@ enum devlink_command {
 	DEVLINK_CMD_DPIPE_ENTRIES_GET,
 	DEVLINK_CMD_DPIPE_HEADERS_GET,
 	DEVLINK_CMD_DPIPE_TABLE_COUNTERS_SET,
+	DEVLINK_CMD_RESOURCE_SET,
+	DEVLINK_CMD_RESOURCE_DUMP,
 
 	/* add new commands above here */
 	__DEVLINK_CMD_MAX,
@@ -201,6 +203,12 @@ enum devlink_attr {
 	DEVLINK_ATTR_PAD,
 
 	DEVLINK_ATTR_ESWITCH_ENCAP_MODE,	/* u8 */
+	DEVLINK_ATTR_RESOURCES,			/* nested */
+	DEVLINK_ATTR_RESOURCE,			/* nested */
+	DEVLINK_ATTR_RESOURCE_NAME,		/* string */
+	DEVLINK_ATTR_RESOURCE_SIZE,		/* u64 */
+	DEVLINK_ATTR_RESOURCE_SIZE_NEW,		/* u64 */
+	DEVLINK_ATTR_RESOURCE_ID,		/* u64 */
 
 	/* add new attributes above here, update the policy in devlink.c */
 

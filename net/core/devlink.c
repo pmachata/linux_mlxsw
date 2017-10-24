@@ -2273,6 +2273,198 @@ static int devlink_nl_cmd_dpipe_table_counters_set(struct sk_buff *skb,
 						counters_enable);
 }
 
+struct devlink_resource *
+devlink_subresource_find(struct devlink_resource *resource, u64 resource_id)
+{
+	struct devlink_resource *sub_resource;
+
+	list_for_each_entry(sub_resource, &resource->sub_resource_list, list) {
+		struct devlink_resource *__sub_resource;
+
+		if (sub_resource->id == resource_id)
+			return sub_resource;
+
+		__sub_resource = devlink_subresource_find(sub_resource,
+							  resource_id);
+		if (__sub_resource)
+			return __sub_resource;
+	}
+	return NULL;
+}
+
+struct devlink_resource *
+devlink_resource_find(struct devlink *devlink, u64 resource_id)
+{
+	struct devlink_resource *resource;
+
+	list_for_each_entry(resource, &devlink->resource_list, list) {
+		struct devlink_resource *sub_resource;
+
+		if (resource->id == resource_id)
+			return resource;
+
+		sub_resource = devlink_subresource_find(resource, resource_id);
+		if (sub_resource)
+			return sub_resource;
+	}
+	return NULL;
+}
+
+static int devlink_nl_cmd_resource_set(struct sk_buff *skb,
+				       struct genl_info *info)
+{
+	struct devlink *devlink = info->user_ptr[0];
+	struct devlink_resource *resource;
+	u64 resource_id;
+	u64 size;
+	int err;
+
+	if (!info->attrs[DEVLINK_ATTR_RESOURCE_ID] ||
+	    !info->attrs[DEVLINK_ATTR_RESOURCE_SIZE])
+		return -EINVAL;
+	resource_id = nla_get_u64(info->attrs[DEVLINK_ATTR_RESOURCE_ID]);
+
+	resource = devlink_resource_find(devlink, resource_id);
+	if (!resource)
+		return -EINVAL;
+
+	if (!resource->resource_ops->size_validate)
+		return -EINVAL;
+
+	size = nla_get_u64(info->attrs[DEVLINK_ATTR_RESOURCE_SIZE]);
+	err = resource->resource_ops->size_validate(resource->priv, size);
+	if (err)
+		return err;
+
+	resource->size_new = size;
+	return 0;
+}
+
+static int devlink_resource_put(struct sk_buff *skb,
+				struct devlink_resource *resource)
+{
+	struct devlink_resource *sub_resource;
+	struct nlattr *sub_resource_attr;
+	struct nlattr *resource_attr;
+
+	resource_attr = nla_nest_start(skb, DEVLINK_ATTR_RESOURCE);
+	if (!resource_attr)
+		return -EMSGSIZE;
+
+	if (nla_put_string(skb, DEVLINK_ATTR_RESOURCE_NAME, resource->name) ||
+	    nla_put_u64_64bit(skb, DEVLINK_ATTR_RESOURCE_SIZE, resource->size,
+			      DEVLINK_ATTR_PAD) ||
+	    nla_put_u64_64bit(skb, DEVLINK_ATTR_RESOURCE_ID, resource->id,
+			      DEVLINK_ATTR_PAD))
+		goto nla_put_failure;
+	if (resource->size != resource->size_new)
+		nla_put_u64_64bit(skb, DEVLINK_ATTR_RESOURCE_SIZE_NEW,
+				  resource->size_new, DEVLINK_ATTR_PAD);
+	if (list_empty(&resource->sub_resource_list))
+		goto out;
+
+	sub_resource_attr = nla_nest_start(skb, DEVLINK_ATTR_RESOURCES);
+	if (!sub_resource_attr)
+		goto nla_put_failure;
+
+	list_for_each_entry(sub_resource, &resource->sub_resource_list, list) {
+		if (devlink_resource_put(skb, sub_resource))
+			goto resource_put_failure;
+	}
+
+	nla_nest_end(skb, sub_resource_attr);
+out:
+	nla_nest_end(skb, resource_attr);
+	return 0;
+
+resource_put_failure:
+	nla_nest_cancel(skb, sub_resource_attr);
+nla_put_failure:
+	nla_nest_cancel(skb, resource_attr);
+	return -EMSGSIZE;
+}
+
+static int devlink_resource_fill(struct genl_info *info,
+				 enum devlink_command cmd, int flags)
+{
+	struct devlink *devlink = info->user_ptr[0];
+	struct devlink_resource *resource;
+	struct nlattr *resources_attr;
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh;
+	bool incomplete;
+	void *hdr;
+	int i;
+	int err;
+
+	resource = list_first_entry(&devlink->resource_list,
+				    struct devlink_resource, list);
+start_again:
+	err = devlink_dpipe_send_and_alloc_skb(&skb, info);
+	if (err)
+		return err;
+
+	hdr = genlmsg_put(skb, info->snd_portid, info->snd_seq,
+			  &devlink_nl_family, NLM_F_MULTI, cmd);
+	if (!hdr) {
+		nlmsg_free(skb);
+		return -EMSGSIZE;
+	}
+
+	if (devlink_nl_put_handle(skb, devlink))
+		goto nla_put_failure;
+
+	resources_attr = nla_nest_start(skb, DEVLINK_ATTR_RESOURCES);
+	if (!resources_attr)
+		goto nla_put_failure;
+
+	incomplete = false;
+	i = 0;
+	list_for_each_entry_from(resource, &devlink->resource_list, list) {
+		err = devlink_resource_put(skb, resource);
+		if (err) {
+			if (!i)
+				goto err_resource_put;
+			incomplete = true;
+			break;
+		}
+		i++;
+	}
+	nla_nest_end(skb, resources_attr);
+	genlmsg_end(skb, hdr);
+	if (incomplete)
+		goto start_again;
+send_done:
+	nlh = nlmsg_put(skb, info->snd_portid, info->snd_seq,
+			NLMSG_DONE, 0, flags | NLM_F_MULTI);
+	if (!nlh) {
+		err = devlink_dpipe_send_and_alloc_skb(&skb, info);
+		if (err)
+			goto err_skb_send_alloc;
+		goto send_done;
+	}
+	return genlmsg_reply(skb, info);
+
+nla_put_failure:
+	err = -EMSGSIZE;
+err_resource_put:
+err_skb_send_alloc:
+	genlmsg_cancel(skb, hdr);
+	nlmsg_free(skb);
+	return err;
+}
+
+static int devlink_nl_cmd_resource_dump(struct sk_buff *skb,
+					struct genl_info *info)
+{
+	struct devlink *devlink = info->user_ptr[0];
+
+	if (list_empty(&devlink->resource_list))
+		return -EOPNOTSUPP;
+
+	return devlink_resource_fill(info, DEVLINK_CMD_RESOURCE_DUMP, 0);
+}
+
 static const struct nla_policy devlink_nl_policy[DEVLINK_ATTR_MAX + 1] = {
 	[DEVLINK_ATTR_BUS_NAME] = { .type = NLA_NUL_STRING },
 	[DEVLINK_ATTR_DEV_NAME] = { .type = NLA_NUL_STRING },
@@ -2451,6 +2643,20 @@ static const struct genl_ops devlink_nl_ops[] = {
 		.flags = GENL_ADMIN_PERM,
 		.internal_flags = DEVLINK_NL_FLAG_NEED_DEVLINK,
 	},
+	{
+		.cmd = DEVLINK_CMD_RESOURCE_SET,
+		.doit = devlink_nl_cmd_resource_set,
+		.policy = devlink_nl_policy,
+		.flags = GENL_ADMIN_PERM,
+		.internal_flags = DEVLINK_NL_FLAG_NEED_DEVLINK,
+	},
+	{
+		.cmd = DEVLINK_CMD_RESOURCE_DUMP,
+		.doit = devlink_nl_cmd_resource_dump,
+		.policy = devlink_nl_policy,
+		.flags = GENL_ADMIN_PERM,
+		.internal_flags = DEVLINK_NL_FLAG_NEED_DEVLINK,
+	},
 };
 
 static struct genl_family devlink_nl_family __ro_after_init = {
@@ -2488,6 +2694,7 @@ struct devlink *devlink_alloc(const struct devlink_ops *ops, size_t priv_size)
 	INIT_LIST_HEAD(&devlink->port_list);
 	INIT_LIST_HEAD(&devlink->sb_list);
 	INIT_LIST_HEAD_RCU(&devlink->dpipe_table_list);
+	INIT_LIST_HEAD(&devlink->resource_list);
 	return devlink;
 }
 EXPORT_SYMBOL_GPL(devlink_alloc);
@@ -2814,6 +3021,116 @@ unlock:
 	mutex_unlock(&devlink_mutex);
 }
 EXPORT_SYMBOL_GPL(devlink_dpipe_table_unregister);
+
+/**
+ *	devlink_resource_register - devlink resource register
+ *
+ *	@devlink: devlink
+ *	@resource_name: resource's name
+ *	@top_hirarchy: top hirarchy
+ *	@resource_size: resource's size
+ *	@resource_id: resource's id
+ *	@parent_reosurce_id: resource's parent id
+ *	@resource_ops: resource ops
+ *	@priv: priv
+ */
+int devlink_resource_register(struct devlink *devlink,
+			      const char *resource_name,
+			      bool top_hirarchy,
+			      u64 resource_size,
+			      u64 resource_id,
+			      u64 parent_resource_id,
+			      struct devlink_resource_ops *resource_ops,
+			      void *priv)
+{
+	struct devlink_resource *resource;
+	struct list_head *resource_list;
+
+	resource = devlink_resource_find(devlink, resource_id);
+	if (resource)
+		return -EINVAL;
+
+	if (top_hirarchy) {
+		resource_list = &devlink->resource_list;
+	} else {
+		struct devlink_resource *parent_resource;
+
+		parent_resource = devlink_resource_find(devlink,
+							parent_resource_id);
+		if (parent_resource)
+			resource_list = &parent_resource->sub_resource_list;
+		else
+			return -EINVAL;
+	}
+
+	resource = kzalloc(sizeof(*resource), GFP_KERNEL);
+	if (!resource)
+		return -ENOMEM;
+
+	resource->name = resource_name;
+	resource->size = resource_size;
+	resource->size_new = resource_size;
+	resource->id = resource_id;
+	resource->resource_ops = resource_ops;
+	resource->priv = priv;
+	INIT_LIST_HEAD(&resource->sub_resource_list);
+
+	list_add_tail(&resource->list, resource_list);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(devlink_resource_register);
+
+static void devlink_subresources_clear(struct devlink_resource *resource)
+{
+	struct devlink_resource *sub_resource, *tmp;
+
+	list_for_each_entry_safe(sub_resource, tmp,
+				 &resource->sub_resource_list, list) {
+		devlink_subresources_clear(sub_resource);
+		list_del(&sub_resource->list);
+		kfree(sub_resource);
+	}
+}
+
+/**
+ *	devlink_resource_clear - frees all resources
+ *
+ *	@devlink: devlink
+ */
+void devlink_resources_clear(struct devlink *devlink)
+{
+	struct devlink_resource *resource, *tmp;
+
+	list_for_each_entry_safe(resource, tmp,
+				 &devlink->resource_list, list) {
+		devlink_subresources_clear(resource);
+		list_del(&resource->list);
+		kfree(resource);
+	}
+}
+EXPORT_SYMBOL_GPL(devlink_resources_clear);
+
+/**
+ *	devlink_resource_size_get - get and update size
+ *
+ *	@devlink: devlink
+ *	@resource_id: the requested resource id
+ *	@p_resource_size: ptr to update
+ */
+int devlink_resource_size_get(struct devlink *devlink,
+			      u64 resource_id,
+			      u64 *p_resource_size)
+{
+	struct devlink_resource *resource;
+
+	resource = devlink_resource_find(devlink, resource_id);
+	if (!resource)
+		return -EINVAL;
+	*p_resource_size = resource->size_new;
+	resource->size = resource->size_new;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(devlink_resource_size_get);
 
 static int __init devlink_module_init(void)
 {
