@@ -71,6 +71,7 @@ enum devlink_command {
 	DEVLINK_CMD_DPIPE_TABLE_COUNTERS_SET,
 	DEVLINK_CMD_RESOURCE_SET,
 	DEVLINK_CMD_RESOURCE_DUMP,
+	DEVLINK_CMD_RELOAD,
 
 	/* add new commands above here */
 	__DEVLINK_CMD_MAX,
