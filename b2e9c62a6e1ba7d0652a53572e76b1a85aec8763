@@ -1,0 +1,3 @@
+Changes from v2 to v3:
+
+- Add __mlxsw_sp_span_entry_demote for symmetry with promote.
