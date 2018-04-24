@@ -403,6 +403,15 @@ tc_offload_check()
 	return 0
 }
 
+tests_run()
+{
+	local current_test
+
+	for current_test in ${TESTS:-$ALL_TESTS}; do
+		$current_test
+	done
+}
+
 ##############################################################################
 # Tests
 
