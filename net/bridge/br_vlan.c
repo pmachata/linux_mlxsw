@@ -671,6 +671,7 @@ struct net_bridge_vlan *br_vlan_find(struct net_bridge_vlan_group *vg, u16 vid)
 
 	return br_vlan_lookup(&vg->vlan_hash, vid);
 }
+EXPORT_SYMBOL_GPL(br_vlan_find);
 
 /* Must be protected by RTNL. */
 static void recalculate_group_addr(struct net_bridge *br)
@@ -1149,3 +1150,34 @@ void br_vlan_get_stats(const struct net_bridge_vlan *v,
 		stats->tx_packets += txpackets;
 	}
 }
+
+struct net_bridge_vlan_group *
+br_vlan_group_rtnl(const struct net_device *br_dev)
+{
+	if (netif_is_bridge_master(br_dev))
+		return br_vlan_group(netdev_priv(br_dev));
+	else
+		return NULL;
+}
+EXPORT_SYMBOL_GPL(br_vlan_group_rtnl);
+
+struct net_bridge_vlan_group *
+br_port_vlan_group_rtnl(const struct net_device *dev)
+{
+	struct net_bridge_port *p = br_port_get_check_rtnl(dev);
+
+	return p ? nbp_vlan_group(p) : NULL;
+}
+EXPORT_SYMBOL_GPL(br_port_vlan_group_rtnl);
+
+u16 br_vlan_group_pvid(const struct net_bridge_vlan_group *vg)
+{
+	return br_get_pvid(vg);
+}
+EXPORT_SYMBOL_GPL(br_vlan_group_pvid);
+
+u16 br_vlan_flags(const struct net_bridge_vlan *v)
+{
+	return v->flags;
+}
+EXPORT_SYMBOL_GPL(br_vlan_flags);

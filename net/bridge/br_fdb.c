@@ -121,6 +121,31 @@ static struct net_bridge_fdb_entry *br_fdb_find(struct net_bridge *br,
 	return fdb;
 }
 
+struct net_device *br_fdb_find_port_hold(const struct net_device *br_dev,
+					 const unsigned char *addr,
+					 __u16 vid)
+{
+	struct net_bridge_fdb_entry *f;
+	struct net_device *dev = NULL;
+	struct net_bridge *br;
+
+	if (!netif_is_bridge_master(br_dev))
+		return NULL;
+
+	br = netdev_priv(br_dev);
+
+	spin_lock_bh(&br->hash_lock);
+	f = br_fdb_find(br, addr, vid);
+	if (f && f->dst) {
+		dev = f->dst->dev;
+		dev_hold(dev);
+	}
+	spin_unlock_bh(&br->hash_lock);
+
+	return dev;
+}
+EXPORT_SYMBOL_GPL(br_fdb_find_port_hold);
+
 struct net_bridge_fdb_entry *br_fdb_find_rcu(struct net_bridge *br,
 					     const unsigned char *addr,
 					     __u16 vid)

@@ -93,10 +93,65 @@ static inline bool br_multicast_router(const struct net_device *dev)
 
 #if IS_ENABLED(CONFIG_BRIDGE) && IS_ENABLED(CONFIG_BRIDGE_VLAN_FILTERING)
 bool br_vlan_enabled(const struct net_device *dev);
+
+struct net_bridge_vlan_group *
+br_vlan_group_rtnl(const struct net_device *br_dev);
+
+struct net_bridge_vlan_group *
+br_port_vlan_group_rtnl(const struct net_device *dev);
+
+u16 br_vlan_group_pvid(const struct net_bridge_vlan_group *vg);
+
+struct net_bridge_vlan *br_vlan_find(struct net_bridge_vlan_group *vg, u16 vid);
+
+u16 br_vlan_flags(const struct net_bridge_vlan *v);
+
 #else
 static inline bool br_vlan_enabled(const struct net_device *dev)
 {
 	return false;
+}
+
+static inline struct net_bridge_vlan_group *
+br_vlan_group_rtnl(const struct net_device *br_dev)
+{
+	return NULL;
+}
+
+static inline struct net_bridge_vlan_group *
+br_port_vlan_group_rtnl(const struct net_device *dev)
+{
+	return NULL;
+}
+
+static inline u16 br_vlan_group_pvid(const struct net_bridge_vlan_group *vg)
+{
+	return 0;
+}
+
+static inline struct net_bridge_vlan *
+br_vlan_find(struct net_bridge_vlan_group *vg, u16 vid)
+{
+	return NULL;
+}
+
+static inline u16 br_vlan_flags(const struct net_bridge_vlan *v)
+{
+	return 0;
+}
+#endif
+
+#if IS_ENABLED(CONFIG_BRIDGE)
+struct net_device *br_fdb_find_port_hold(const struct net_device *br_dev,
+					 const unsigned char *addr,
+					 __u16 vid);
+#else
+static inline struct net_device *
+br_fdb_find_port_hold(const struct net_device *br_dev,
+		      const unsigned char *addr,
+		      __u16 vid)
+{
+	return NULL;
 }
 #endif
 

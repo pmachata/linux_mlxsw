@@ -594,9 +594,20 @@ static inline bool br_rx_handler_check_rcu(const struct net_device *dev)
 	return rcu_dereference(dev->rx_handler) == br_handle_frame;
 }
 
+static inline bool br_rx_handler_check_rtnl(const struct net_device *dev)
+{
+	return rcu_dereference_rtnl(dev->rx_handler) == br_handle_frame;
+}
+
 static inline struct net_bridge_port *br_port_get_check_rcu(const struct net_device *dev)
 {
 	return br_rx_handler_check_rcu(dev) ? br_port_get_rcu(dev) : NULL;
+}
+
+static inline struct net_bridge_port *
+br_port_get_check_rtnl(const struct net_device *dev)
+{
+	return br_rx_handler_check_rtnl(dev) ? br_port_get_rtnl_rcu(dev) : NULL;
 }
 
 /* br_ioctl.c */
@@ -953,12 +964,6 @@ static inline int nbp_vlan_delete(struct net_bridge_port *port, u16 vid)
 
 static inline void nbp_vlan_flush(struct net_bridge_port *port)
 {
-}
-
-static inline struct net_bridge_vlan *br_vlan_find(struct net_bridge_vlan_group *vg,
-						   u16 vid)
-{
-	return NULL;
 }
 
 static inline int nbp_vlan_init(struct net_bridge_port *port)
