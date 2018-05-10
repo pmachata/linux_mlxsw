@@ -357,8 +357,14 @@ tunnel_create()
 	local local=$1; shift
 	local remote=$1; shift
 
-	ip link add name $name type $type \
-	   local $local remote $remote "$@"
+	if [ ! -z "$local" ]; then
+	    local="local $local"
+	fi
+	if [ ! -z "$remote" ]; then
+	    remote="remote $remote"
+	fi
+
+	ip link add name $name type $type $local $remote "$@"
 	ip link set dev $name up
 }
 
