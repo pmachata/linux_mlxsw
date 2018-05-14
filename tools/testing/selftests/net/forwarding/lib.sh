@@ -19,7 +19,9 @@ if [[ "$relative_path" == "${BASH_SOURCE}" ]]; then
 	relative_path="."
 fi
 
-if [[ -f $relative_path/forwarding.config ]]; then
+if [[ ! -z "$FORWARDING_CONFIG" ]]; then
+	source "$FORWARDING_CONFIG"
+elif [[ -f $relative_path/forwarding.config ]]; then
 	source "$relative_path/forwarding.config"
 fi
 
