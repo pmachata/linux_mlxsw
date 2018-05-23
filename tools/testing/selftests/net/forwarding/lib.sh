@@ -394,6 +394,27 @@ vlan_destroy()
 	ip link del dev $name
 }
 
+team_create()
+{
+	local if_name=$1; shift
+	local mode=$1; shift
+
+	teamd -t $if_name -d -c '{"runner": {"name": "'$mode'"}}'
+	for slave in "$@"; do
+		ip link set dev $slave down
+		ip link set dev $slave master $if_name
+		ip link set dev $slave up
+	done
+	ip link set dev $if_name up
+}
+
+team_destroy()
+{
+	local if_name=$1; shift
+
+	teamd -t $if_name -k
+}
+
 master_name_get()
 {
 	local if_name=$1
