@@ -31,27 +31,20 @@ setup_prepare()
 	vrf_prepare
 	mirror_gre_topo_create
 
-	ip link add name $swp3.555 link $swp3 type vlan id 555
-	ip address add dev $swp3.555 192.0.2.129/32
-	ip address add dev $swp3.555 2001:db8:2::1/128
-	ip link set dev $swp3.555 up
+	vlan_create $swp3 555 "" 192.0.2.129/32 2001:db8:2::1/128
 
 	ip route add 192.0.2.130/32 dev $swp3.555
 	ip -6 route add 2001:db8:2::2/128 dev $swp3.555
 
-	ip link add name $h3.555 link $h3 type vlan id 555
-	ip link set dev $h3.555 master v$h3
-	ip address add dev $h3.555 192.0.2.130/28
-	ip address add dev $h3.555 2001:db8:2::2/64
-	ip link set dev $h3.555 up
+	vlan_create $h3 555 v$h3 192.0.2.130/28 2001:db8:2::2/64
 }
 
 cleanup()
 {
 	pre_cleanup
 
-	ip link del dev $h3.555
-	ip link del dev $swp3.555
+	vlan_destroy $h3 555
+	vlan_destroy $swp3 555
 
 	mirror_gre_topo_destroy
 	vrf_cleanup
