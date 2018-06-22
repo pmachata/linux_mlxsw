@@ -103,7 +103,7 @@ h2_destroy()
 
 h3_create_team()
 {
-	team_create lag2 lacp $h3 $h4
+	lag_create lag2 lacp $h3 $h4
 	__simple_if_init lag2 vrf-h3 192.0.2.130/32
 	ip -4 route add vrf vrf-h3 192.0.2.129/32 dev lag2
 }
@@ -112,7 +112,7 @@ h3_destroy_team()
 {
 	ip -4 route del vrf vrf-h3 192.0.2.129/32 dev lag2
 	__simple_if_fini lag2 192.0.2.130/32
-	team_destroy lag2
+	lag_destroy lag2
 
 	ip link set dev $h3 down
 	ip link set dev $h4 down
@@ -148,7 +148,7 @@ switch_create()
 
 	ip link set dev $swp3 up
 	ip link set dev $swp4 up
-	team_create lag1 lacp $swp3 $swp4
+	lag_create lag1 lacp $swp3 $swp4
 	__addr_add_del lag1 add 192.0.2.129/32
 	ip -4 route add 192.0.2.130/32 dev lag1
 }
@@ -157,7 +157,7 @@ switch_destroy()
 {
 	ip -4 route del 192.0.2.130/32 dev lag1
 	__addr_add_del lag1 del 192.0.2.129/32
-	team_destroy lag1
+	lag_destroy lag1
 
 	ip link set dev $swp4 down
 	ip link set dev $swp3 down
@@ -220,12 +220,15 @@ test_lag_slave()
 	mirror_install $swp1 ingress gt4 \
 		       "proto 802.1q flower vlan_id 333 $tcflags"
 
-	# Move $down_dev away from the team. That will prompt change in
-	# txability of the connected device, without changing its upness. The
-	# driver should notice the txability change and move the traffic to the
-	# other slave.
 	ip link set dev $down_dev nomaster
+	# Bond downs the removed slave.
+	ip link set dev $down_dev up
+	setup_wait_dev $down_dev
 	sleep 2
+	# At this point one of the former lag2 slaves is not one anymore and is
+	# still up. For lag1 that should mean that the corresponding slave is up
+	# and not txable. The driver should notice the txability change and move
+	# the traffic to the other slave.
 	mirror_test vrf-h1 192.0.2.1 192.0.2.18 $up_dev 1 10
 
 	# Test lack of connectivity when neither slave is txable.

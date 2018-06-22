@@ -15,6 +15,7 @@ PAUSE_ON_FAIL=${PAUSE_ON_FAIL:=no}
 PAUSE_ON_CLEANUP=${PAUSE_ON_CLEANUP:=no}
 NETIF_TYPE=${NETIF_TYPE:=veth}
 NETIF_CREATE=${NETIF_CREATE:=yes}
+LAG_NETIF_TYPE=${LAG_NETIF_TYPE:-team}
 
 relative_path="${BASH_SOURCE%/*}"
 if [[ "$relative_path" == "${BASH_SOURCE}" ]]; then
@@ -417,6 +418,17 @@ vlan_destroy()
 	ip link del dev $name
 }
 
+lag_enslave()
+{
+	local if_name=$1; shift
+
+	for slave in "$@"; do
+		ip link set dev $slave down
+		ip link set dev $slave master $if_name
+		ip link set dev $slave up
+	done
+}
+
 team_create()
 {
 	local if_name=$1; shift
@@ -424,11 +436,7 @@ team_create()
 
 	require_command $TEAMD
 	$TEAMD -t $if_name -d -c '{"runner": {"name": "'$mode'"}}'
-	for slave in "$@"; do
-		ip link set dev $slave down
-		ip link set dev $slave master $if_name
-		ip link set dev $slave up
-	done
+	lag_enslave $if_name "$@"
 	ip link set dev $if_name up
 }
 
@@ -437,6 +445,46 @@ team_destroy()
 	local if_name=$1; shift
 
 	$TEAMD -t $if_name -k
+}
+
+bond_create()
+{
+	local if_name=$1; shift
+	local mode=$1; shift
+
+	ip link add name $if_name type bond mode $mode
+	lag_enslave $if_name "$@"
+	ip link set dev $if_name up
+}
+
+bond_destroy()
+{
+	local if_name=$1; shift
+
+	ip link del dev $if_name
+}
+
+lag_create()
+{
+	local if_name=$1; shift
+	local mode=$1; shift
+
+	if [[ "$LAG_NETIF_TYPE" == bond ]]; then
+		# Map some common team types to bonding driver nomenclature to
+		# unify the interface.
+		local -A bond_map=(
+			[lacp]=802.3ad
+			[loadbalance]=balance-xor
+		)
+		mode=${bond_map[$mode]:-$mode}
+	fi
+
+	${LAG_NETIF_TYPE}_create $if_name $mode "$@"
+}
+
+lag_destroy()
+{
+	${LAG_NETIF_TYPE}_destroy "$@"
 }
 
 master_name_get()
