@@ -70,6 +70,70 @@ ets_class_from_arg(struct Qdisc *sch, unsigned long arg)
 	return &q->classes[arg - 1];
 }
 
+static struct tc_ets_qopt_offload ets_qopt_offload(struct Qdisc *sch,
+						   enum tc_ets_command command)
+{
+	return (struct tc_ets_qopt_offload) {
+		.command = command,
+		.handle = sch->handle,
+		.parent = sch->parent,
+	};
+}
+
+static void ets_offload_change(struct Qdisc *sch)
+{
+	struct tc_ets_qopt_offload qopt = ets_qopt_offload(sch, TC_ETS_REPLACE);
+	struct net_device *dev = qdisc_dev(sch);
+	struct ets_sched *q = qdisc_priv(sch);
+	unsigned int i;
+
+	if (!tc_can_offload(dev) || !dev->netdev_ops->ndo_setup_tc)
+		return;
+
+	qopt.replace_params.bands = q->nbands;
+	memcpy(&qopt.replace_params.priomap,
+	       q->prio2band, sizeof(q->prio2band));
+	for (i = 0; i < q->nbands; i++)
+		qopt.replace_params.quanta[i] = q->classes[i].quantum;
+
+	dev->netdev_ops->ndo_setup_tc(dev, TC_SETUP_QDISC_ETS, &qopt);
+}
+
+static void ets_offload_destroy(struct Qdisc *sch)
+{
+	struct tc_ets_qopt_offload qopt = ets_qopt_offload(sch, TC_ETS_DESTROY);
+	struct net_device *dev = qdisc_dev(sch);
+
+	if (!tc_can_offload(dev) || !dev->netdev_ops->ndo_setup_tc)
+		return;
+
+	dev->netdev_ops->ndo_setup_tc(dev, TC_SETUP_QDISC_ETS, &qopt);
+}
+
+static void ets_offload_graft(struct Qdisc *sch, struct Qdisc *new,
+			      struct Qdisc *old, unsigned long arg,
+			      struct netlink_ext_ack *extack)
+{
+	struct tc_ets_qopt_offload qopt = ets_qopt_offload(sch, TC_ETS_GRAFT);
+	struct net_device *dev = qdisc_dev(sch);
+
+	qopt.graft_params.band = arg - 1;
+	qopt.graft_params.child_handle = new->handle;
+
+	qdisc_offload_graft_helper(dev, sch, new, old, TC_SETUP_QDISC_ETS,
+				   &qopt, extack);
+}
+
+static int ets_offload_dump(struct Qdisc *sch)
+{
+	struct tc_ets_qopt_offload qopt = ets_qopt_offload(sch, TC_ETS_STATS);
+
+	qopt.stats.bstats = &sch->bstats;
+	qopt.stats.qstats = &sch->qstats;
+
+	return qdisc_offload_dump_helper(sch, TC_SETUP_QDISC_ETS, &qopt);
+}
+
 static int ets_class_change(struct Qdisc *sch, u32 classid, u32 parentid,
 			    struct nlattr **tca, unsigned long *arg,
 			    struct netlink_ext_ack *extack)
@@ -110,6 +174,8 @@ static int ets_class_change(struct Qdisc *sch, u32 classid, u32 parentid,
 	sch_tree_lock(sch);
 	cl->quantum = quantum;
 	sch_tree_unlock(sch);
+
+	ets_offload_change(sch);
 	return 0;
 }
 
@@ -135,6 +201,7 @@ static int ets_class_graft(struct Qdisc *sch, unsigned long arg,
 	}
 
 	*old = qdisc_replace(sch, new, &cl->qdisc);
+	ets_offload_graft(sch, new, *old, arg, extack);
 	return 0;
 }
 
@@ -513,6 +580,7 @@ static int ets_qdisc_change(struct Qdisc *sch, struct nlattr *opt,
 
 	sch_tree_unlock(sch);
 
+	ets_offload_change(sch);
 	for (i = q->nbands; i < oldbands; i++) {
 		qdisc_put(q->classes[i].qdisc);
 		memset(&q->classes[i], 0, sizeof(q->classes[i]));
@@ -556,6 +624,7 @@ static void ets_qdisc_destroy(struct Qdisc *sch)
 	struct ets_sched *q = qdisc_priv(sch);
 	int band;
 
+	ets_offload_destroy(sch);
 	tcf_block_put(q->block);
 	for (band = 0; band < q->nbands; band++)
 		qdisc_put(q->classes[band].qdisc);
@@ -564,11 +633,17 @@ static void ets_qdisc_destroy(struct Qdisc *sch)
 static int ets_qdisc_dump(struct Qdisc *sch, struct sk_buff *skb)
 {
 	struct ets_sched *q = qdisc_priv(sch);
-	struct nlattr *opts;
+	struct nlattr *opts = NULL;
 	struct nlattr *nest;
 	int band;
 	int prio;
+	int err;
 
+	err = ets_offload_dump(sch);
+	if (err)
+		goto nla_err;
+
+	err = -EMSGSIZE;
 	opts = nla_nest_start_noflag(skb, TCA_OPTIONS);
 	if (!opts)
 		goto nla_err;
@@ -603,7 +678,7 @@ static int ets_qdisc_dump(struct Qdisc *sch, struct sk_buff *skb)
 
 nla_err:
 	nla_nest_cancel(skb, opts);
-	return -EMSGSIZE;
+	return err;
 }
 
 static const struct Qdisc_class_ops ets_class_ops = {
