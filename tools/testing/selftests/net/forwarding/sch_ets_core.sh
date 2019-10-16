@@ -203,6 +203,32 @@ ping_ipv4()
 	ping_test $h1.12 $(dip 2) " vlan 12"
 }
 
+__xxx()
+{
+	local n=$1; shift
+	local is=$(seq 0 $((n - 1)))
+
+	for i in $is; do
+		start_traffic $h1.1$i $(sip $i) $(dip $i) $h2_mac
+	done
+
+	read -p Ready.
+
+	for i in $is; do
+		stop_traffic
+	done
+}
+
+xxx()
+{
+	__xxx 0
+}
+
+xxx3()
+{
+	__xxx 3
+}
+
 __ets_dwrr_test()
 {
 	local n=$1; shift
