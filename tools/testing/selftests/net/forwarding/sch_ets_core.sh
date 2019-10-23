@@ -73,10 +73,9 @@ ALL_TESTS="
 NUM_NETIFS=4
 CHECK_TC="yes"
 source $lib_dir/lib.sh
+source $lib_dir/sch_ets_tests.sh
 
-HAVE_QDISC=false
 PARENT=root
-declare -a WS=(0 0 0)
 
 sip()
 {
@@ -86,6 +85,14 @@ sip()
 dip()
 {
 	echo 192.0.2.$((16 * $1 + 2))
+}
+
+ets_start_traffic()
+{
+	local dst_mac=$(mac_get $h2)
+	local i=$1; shift
+
+	start_traffic $h1.1$i $(sip $i) $(dip $i) $dst_mac
 }
 
 h1_create()
@@ -102,6 +109,8 @@ h1_create()
 
 h1_destroy()
 {
+	local i
+
 	for i in {0..2}; do
 		vlan_destroy $h1 1$i
 	done
@@ -111,6 +120,8 @@ h1_destroy()
 
 h2_create()
 {
+	local i
+
 	simple_if_init $h2
 	mtu_set $h2 9000
 	for i in {0..2}; do
@@ -120,6 +131,8 @@ h2_create()
 
 h2_destroy()
 {
+	local i
+
 	for i in {0..2}; do
 		vlan_destroy $h2 1$i
 	done
@@ -129,6 +142,8 @@ h2_destroy()
 
 ets_switch_create()
 {
+	local i
+
 	ip link set dev $swp1 up
 	mtu_set $swp1 9000
 
@@ -153,6 +168,8 @@ ets_switch_create()
 
 ets_switch_destroy()
 {
+	local i
+
 	tc qdisc del dev $swp2 root
 
 	for i in {0..2}; do
@@ -176,7 +193,8 @@ setup_prepare()
 	swp2=${NETIFS[p3]}
 	h2=${NETIFS[p4]}
 
-	h2_mac=$(mac_get $h2)
+	put=$swp2
+	hut=$h2
 
 	vrf_prepare
 
@@ -206,10 +224,12 @@ ping_ipv4()
 __xxx()
 {
 	local n=$1; shift
+
 	local is=$(seq 0 $((n - 1)))
+	local i
 
 	for i in $is; do
-		start_traffic $h1.1$i $(sip $i) $(dip $i) $h2_mac
+		ets_start_traffic $i
 	done
 
 	read -p Ready.
@@ -227,97 +247,6 @@ xxx()
 xxx3()
 {
 	__xxx 3
-}
-
-__ets_dwrr_test()
-{
-	local n=$1; shift
-
-	local is=$(seq 0 $((n - 1)))
-	local -a t0 t1 d
-	local i
-
-	for i in $is; do
-		start_traffic $h1.1$i $(sip $i) $(dip $i) $h2_mac
-	done
-
-	sleep 10
-
-	t0=($(for i in $is; do
-		  get_stats $h2 $i
-	      done))
-
-	sleep 10
-
-	t1=($(for i in $is; do
-		  get_stats $h2 $i
-	      done))
-	d=($(for i in $is; do
-		 echo $((${t1[$i]} - ${t0[$i]}))
-	     done))
-
-	for i in $(seq $((n - 1))); do
-		multipath_eval "bands 0:$i" ${WS[0]} ${WS[$i]} ${d[0]} ${d[$i]}
-	done
-
-	for i in $is; do
-		stop_traffic
-	done
-}
-
-ets_dwrr_test3()
-{
-	echo "Testing ETS DRR weights ${WS[0]} ${WS[1]} ${WS[2]}"
-	__ets_dwrr_test 3
-}
-
-ets_dwrr_test2()
-{
-	echo "Testing ETS DRR weights ${WS[0]} ${WS[1]}"
-	__ets_dwrr_test 2
-}
-
-ets_qdisc_setup()
-{
-	local dev=$1; shift
-	local -a quanta=("$@")
-
-	local op=$(if $HAVE_QDISC; then echo change; else echo add; fi)
-	local n=${#quanta[@]}
-	local is=$(seq 0 $((n - 1)))
-	local i
-
-	for ((i = 0; i < n; i++)); do
-	    WS[$i]=${quanta[$i]}
-	done
-	for ((; i < ${#WS[@]}; i++)); do
-	    WS[$i]=0
-	done
-
-	tc qdisc $op dev $dev $PARENT handle 10: ets \
-	   quanta ${quanta[@]} priomap $is
-	HAVE_QDISC=true
-}
-
-ets_set_dwrr_uniform()
-{
-	ets_qdisc_setup $swp2 3300 3300 3300
-}
-
-ets_set_dwrr_varying()
-{
-	ets_qdisc_setup $swp2 5000 3500 1500
-}
-
-ets_change_class()
-{
-	tc class change dev $swp2 classid 10:2 ets quantum 8000
-	WS[1]=8000
-}
-
-ets_set_dwrr_two_bands()
-{
-	ets_qdisc_setup $swp2 5000 2500
 }
 
 ets_run()

@@ -22,10 +22,9 @@ switch_destroy()
 
 get_stats()
 {
-	local dev=$1; shift
 	local band=$1; shift
 
-	link_stats_get $dev.1$i rx bytes
+	link_stats_get $h2.1$i rx bytes
 }
 
 ets_run

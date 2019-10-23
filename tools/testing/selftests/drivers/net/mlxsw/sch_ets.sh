@@ -45,10 +45,9 @@ switch_destroy()
 
 get_stats()
 {
-	local dev=$1; shift
 	local band=$1; shift
 
-	ethtool_stats_get "$dev" rx_octets_prio_$band
+	ethtool_stats_get "$h2" rx_octets_prio_$band
 }
 
 bail_on_lldpad
