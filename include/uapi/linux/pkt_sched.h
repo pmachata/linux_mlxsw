@@ -1186,11 +1186,12 @@ enum {
 #define TCQ_ETS_MAX_BANDS 16
 
 enum {
-       TCA_ETS_UNSPEC,
-       TCA_ETS_BANDS,	/* u8 */
-       TCA_ETS_QUANTA,	/* nested TCA_ETS_BAND_QUANTUM */
-       TCA_ETS_PRIOMAP,	/* nested TCA_ETS_PMAP_BAND */
-       __TCA_ETS_MAX,
+	TCA_ETS_UNSPEC,
+	TCA_ETS_BANDS,	/* u8 */
+	TCA_ETS_STRICT,	/* u8 */
+	TCA_ETS_QUANTA,	/* nested TCA_ETS_BAND_QUANTUM */
+	TCA_ETS_PRIOMAP,	/* nested TCA_ETS_PMAP_BAND */
+	__TCA_ETS_MAX,
 };
 
 #define TCA_ETS_MAX (__TCA_ETS_MAX - 1)

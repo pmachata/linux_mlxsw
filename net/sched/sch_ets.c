@@ -24,12 +24,14 @@ struct ets_sched {
 	struct tcf_proto __rcu *filter_list;
 	struct tcf_block *block;
 	unsigned int nbands;
+	unsigned int nstrict;
 	u8 prio2band[TC_PRIO_MAX + 1];
 	struct ets_class classes[TCQ_ETS_MAX_BANDS];
 };
 
 static const struct nla_policy ets_policy[TCA_ETS_MAX + 1] = {
 	[TCA_ETS_BANDS] = { .type = NLA_U8 },
+	[TCA_ETS_STRICT] = { .type = NLA_U8 },
 	[TCA_ETS_QUANTA] = { .type = NLA_NESTED },
 	[TCA_ETS_PRIOMAP] = { .type = NLA_NESTED },
 };
@@ -134,11 +136,19 @@ static int ets_offload_dump(struct Qdisc *sch)
 	return qdisc_offload_dump_helper(sch, TC_SETUP_QDISC_ETS, &qopt);
 }
 
+static bool ets_class_is_strict(struct ets_sched *q, struct ets_class *cl)
+{
+	unsigned int band = cl - q->classes;
+
+	return band < q->nstrict;
+}
+
 static int ets_class_change(struct Qdisc *sch, u32 classid, u32 parentid,
 			    struct nlattr **tca, unsigned long *arg,
 			    struct netlink_ext_ack *extack)
 {
 	struct ets_class *cl = ets_class_from_arg(sch, *arg);
+	struct ets_sched *q = qdisc_priv(sch);
 	struct nlattr *opt = tca[TCA_OPTIONS];
 	struct nlattr *tb[TCA_ETS_MAX + 1];
 	unsigned int quantum;
@@ -166,6 +176,11 @@ static int ets_class_change(struct Qdisc *sch, u32 classid, u32 parentid,
 		/* Nothing to configure. */
 		return 0;
 
+	if (ets_class_is_strict(q, cl)) {
+		NL_SET_ERR_MSG(extack, "Strict bands do not have a configurable quantum");
+		return -EINVAL;
+	}
+
 	err = ets_quantum_parse(sch, tb[TCA_ETS_BAND_QUANTUM], &quantum,
 				extack);
 	if (err)
@@ -179,10 +194,10 @@ static int ets_class_change(struct Qdisc *sch, u32 classid, u32 parentid,
 	return 0;
 }
 
-static int ets_class_id(struct Qdisc *sch, struct ets_class *cls)
+static int ets_class_id(struct Qdisc *sch, struct ets_class *cl)
 {
 	struct ets_sched *q = qdisc_priv(sch);
-	int band = cls - q->classes;
+	int band = cl - q->classes;
 
 	return TC_H_MAKE(sch->handle, band + 1);
 }
@@ -225,8 +240,10 @@ static unsigned long ets_class_find(struct Qdisc *sch, u32 classid)
 static void ets_class_qlen_notify(struct Qdisc *sch, unsigned long arg)
 {
 	struct ets_class *cl = ets_class_from_arg(sch, arg);
+	struct ets_sched *q = qdisc_priv(sch);
 
-	list_del(&cl->alist);
+	if (!ets_class_is_strict(q, cl))
+		list_del(&cl->alist);
 }
 
 static int ets_class_dump(struct Qdisc *sch, unsigned long arg,
@@ -374,7 +391,7 @@ static int ets_qdisc_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 		return err;
 	}
 
-	if (first) {
+	if (first && !ets_class_is_strict(q, cl)) {
 		list_add_tail(&cl->alist, &q->active);
 		cl->deficit = cl->quantum;
 	}
@@ -384,16 +401,33 @@ static int ets_qdisc_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 	return err;
 }
 
+static struct sk_buff *
+ets_qdisc_dequeue_skb(struct Qdisc *sch, struct sk_buff *skb)
+{
+	qdisc_bstats_update(sch, skb);
+	qdisc_qstats_backlog_dec(sch, skb);
+	sch->q.qlen--;
+	return skb;
+}
+
 static struct sk_buff *ets_qdisc_dequeue(struct Qdisc *sch)
 {
 	struct ets_sched *q = qdisc_priv(sch);
 	struct ets_class *cl;
 	struct sk_buff *skb;
+	unsigned int band;
 	unsigned int len;
 
 	if (list_empty(&q->active))
 		goto out;
 	while (1) {
+		for (band = 0; band < q->nstrict; band++) {
+			cl = &q->classes[band];
+			skb = qdisc_dequeue_peeked(cl->qdisc);
+			if (skb)
+				return ets_qdisc_dequeue_skb(sch, skb);
+		}
+
 		cl = list_first_entry(&q->active, struct ets_class, alist);
 		skb = cl->qdisc->ops->peek(cl->qdisc);
 		if (skb == NULL) {
@@ -409,12 +443,7 @@ static struct sk_buff *ets_qdisc_dequeue(struct Qdisc *sch)
 				goto out;
 			if (cl->qdisc->q.qlen == 0)
 				list_del(&cl->alist);
-
-			bstats_update(&cl->bstats, skb);
-			qdisc_bstats_update(sch, skb);
-			qdisc_qstats_backlog_dec(sch, skb);
-			sch->q.qlen--;
-			return skb;
+			return ets_qdisc_dequeue_skb(sch, skb);
 		}
 
 		cl->deficit += cl->quantum;
@@ -465,11 +494,12 @@ static int ets_qdisc_priomap_parse(struct nlattr *priomap_attr,
 
 static int ets_qdisc_quanta_parse(struct Qdisc *sch, struct nlattr *quanta_attr,
 				  unsigned int nbands,
+				  unsigned int nstrict,
 				  unsigned int quanta[TCQ_ETS_MAX_BANDS],
 				  struct netlink_ext_ack *extack)
 {
 	const struct nlattr *attr;
-	int band = 0;
+	int band = nstrict;
 	int rem;
 	int err;
 
@@ -508,6 +538,7 @@ static int ets_qdisc_change(struct Qdisc *sch, struct nlattr *opt,
 	struct nlattr *tb[TCA_ETS_MAX + 1];
 	u8 priomap[TC_PRIO_MAX + 1] = {0};
 	unsigned int oldbands = q->nbands;
+	unsigned int nstrict = 0;
 	unsigned int nbands;
 	unsigned int i;
 	int err;
@@ -525,10 +556,18 @@ static int ets_qdisc_change(struct Qdisc *sch, struct nlattr *opt,
 		NL_SET_ERR_MSG_MOD(extack, "Number of bands is a required argument");
 		return -EINVAL;
 	}
-	nbands = nla_get_u32(tb[TCA_ETS_BANDS]);
+	nbands = nla_get_u8(tb[TCA_ETS_BANDS]);
 	if (nbands < 2 || nbands > TCQ_ETS_MAX_BANDS) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid number of bands");
 		return -EINVAL;
+	}
+
+	if (tb[TCA_ETS_STRICT]) {
+		nstrict = nla_get_u8(tb[TCA_ETS_STRICT]);
+		if (nstrict > nbands) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid number of strict bands");
+			return -EINVAL;
+		}
 	}
 
 	if (tb[TCA_ETS_PRIOMAP]) {
@@ -540,11 +579,11 @@ static int ets_qdisc_change(struct Qdisc *sch, struct nlattr *opt,
 
 	if (tb[TCA_ETS_QUANTA]) {
 		err = ets_qdisc_quanta_parse(sch, tb[TCA_ETS_QUANTA],
-					     nbands, quanta, extack);
+					     nbands, nstrict, quanta, extack);
 		if (err)
 			return err;
 	}
-	for (i = 0; i < nbands; i++) {
+	for (i = nstrict; i < nbands; i++) {
 		if (!quanta[i])
 			ets_quantum_parse(sch, NULL, &quanta[i], extack);
 	}
@@ -564,6 +603,7 @@ static int ets_qdisc_change(struct Qdisc *sch, struct nlattr *opt,
 	sch_tree_lock(sch);
 
 	q->nbands = nbands;
+	q->nstrict = nstrict;
 	memcpy(q->prio2band, priomap, sizeof(priomap));
 
 	for (i = q->nbands; i < oldbands; i++)
@@ -610,11 +650,12 @@ static void ets_qdisc_reset(struct Qdisc *sch)
 	struct ets_sched *q = qdisc_priv(sch);
 	int band;
 
-	for (band = 0; band < q->nbands; band++) {
+	for (band = q->nstrict; band < q->nbands; band++) {
 		if (q->classes[band].qdisc->q.qlen)
 			list_del(&q->classes[band].alist);
-		qdisc_reset(q->classes[band].qdisc);
 	}
+	for (band = 0; band < q->nbands; band++)
+		qdisc_reset(q->classes[band].qdisc);
 	sch->qstats.backlog = 0;
 	sch->q.qlen = 0;
 }
@@ -651,11 +692,15 @@ static int ets_qdisc_dump(struct Qdisc *sch, struct sk_buff *skb)
 	if (nla_put_u8(skb, TCA_ETS_BANDS, q->nbands))
 		goto nla_err;
 
+	if (q->nstrict &&
+	    nla_put_u8(skb, TCA_ETS_STRICT, q->nstrict))
+		goto nla_err;
+
 	nest = nla_nest_start(skb, TCA_ETS_QUANTA);
 	if (!nest)
 		goto nla_err;
 
-	for (band = 0; band < q->nbands; band++) {
+	for (band = q->nstrict; band < q->nbands; band++) {
 		if (nla_put_u32(skb, TCA_ETS_BAND_QUANTUM,
 				q->classes[band].quantum))
 			goto nla_err;
