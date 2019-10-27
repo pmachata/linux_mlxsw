@@ -418,8 +418,6 @@ static struct sk_buff *ets_qdisc_dequeue(struct Qdisc *sch)
 	unsigned int band;
 	unsigned int len;
 
-	if (list_empty(&q->active))
-		goto out;
 	while (1) {
 		for (band = 0; band < q->nstrict; band++) {
 			cl = &q->classes[band];
@@ -427,6 +425,9 @@ static struct sk_buff *ets_qdisc_dequeue(struct Qdisc *sch)
 			if (skb)
 				return ets_qdisc_dequeue_skb(sch, skb);
 		}
+
+		if (list_empty(&q->active))
+			goto out;
 
 		cl = list_first_entry(&q->active, struct ets_class, alist);
 		skb = cl->qdisc->ops->peek(cl->qdisc);

@@ -58,17 +58,23 @@
 # +---------------------------------------------------------------------+
 
 ALL_TESTS="
-	ets_set_dwrr_uniform
+	ets_set_strict
 	ping_ipv4
-	ets_dwrr_test3
+	ets_dwrr_test_012
+	ets_dwrr_test_12
+	ets_set_mixed
+	ets_dwrr_test_012
+	ets_dwrr_test_12
+	ets_set_dwrr_uniform
+	ets_dwrr_test_012
 	ets_set_dwrr_varying
-	ets_dwrr_test3
-	ets_change_class
-	ets_dwrr_test3
+	ets_dwrr_test_012
+	ets_change_quantum
+	ets_dwrr_test_012
 	ets_set_dwrr_two_bands
-	ets_dwrr_test2
+	ets_dwrr_test_01
 	ets_set_dwrr_uniform	$(: Switch back to three bands)
-	ets_dwrr_test3		$(: And redo the test)
+	ets_dwrr_test_012	$(: And redo the test)
 "
 NUM_NETIFS=4
 CHECK_TC="yes"
@@ -242,6 +248,11 @@ __xxx()
 xxx()
 {
 	__xxx 0
+}
+
+xxx1()
+{
+	__xxx 1
 }
 
 xxx3()
