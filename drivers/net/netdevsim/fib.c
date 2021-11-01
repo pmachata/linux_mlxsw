@@ -1319,6 +1319,18 @@ static int nsim_nexthop_bucket_replace(struct nsim_fib_data *data,
 	return 0;
 }
 
+static void nsim_nexthop_hw_stats_get(struct nsim_fib_data *data,
+				      struct nh_notifier_info *info)
+{
+	int i;
+
+	if (info->type != NH_NOTIFIER_INFO_TYPE_GRP_HW_STATS)
+		return;
+
+	for (i = 0; i < info->nh_grp_hw_stats->num_nh; i++)
+		nh_grp_hw_stats_report_delta(info->nh_grp_hw_stats, i, i+1);
+}
+
 static int nsim_nexthop_event_nb(struct notifier_block *nb, unsigned long event,
 				 void *ptr)
 {
@@ -1340,6 +1352,9 @@ static int nsim_nexthop_event_nb(struct notifier_block *nb, unsigned long event,
 		break;
 	case NEXTHOP_EVENT_BUCKET_REPLACE:
 		err = nsim_nexthop_bucket_replace(data, info);
+		break;
+	case NEXTHOP_EVENT_HW_STATS_REPORT_DELTA:
+		nsim_nexthop_hw_stats_get(data, info);
 		break;
 	default:
 		break;
