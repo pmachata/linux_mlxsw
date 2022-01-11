@@ -5593,6 +5593,7 @@ rtnl_stats_get_policy_filters[IFLA_STATS_MAX + 1] = {
 static const struct nla_policy
 ifla_stats_set_policy[IFLA_STATS_GETSET_MAX + 1] = {
 	[IFLA_STATS_GETSET_UNSPEC] = { .strict_start_type = 1 },
+	[IFLA_STATS_SET_OFFLOAD_XSTATS_L3_STATS] = { .type = NLA_U8 },
 };
 
 static int rtnl_stats_get_parse_filters(struct nlattr *ifla_filters,
@@ -5797,9 +5798,43 @@ out:
 	return skb->len;
 }
 
+void rtnl_offload_xstats_notify(struct net_device *dev)
+{
+	struct rtnl_stats_dump_filters response_filters = {};
+	struct net *net = dev_net(dev);
+	int idxattr = 0, prividx = 0;
+	struct sk_buff *skb;
+	int err = -ENOBUFS;
+
+	response_filters.mask[0] |=
+		IFLA_STATS_FILTER_BIT(IFLA_STATS_LINK_OFFLOAD_XSTATS);
+	response_filters.mask[IFLA_STATS_LINK_OFFLOAD_XSTATS] |=
+		IFLA_STATS_FILTER_BIT(IFLA_OFFLOAD_XSTATS_HW_S_INFO);
+
+	skb = nlmsg_new(if_nlmsg_stats_size(dev, &response_filters),
+			GFP_ATOMIC);
+	if (!skb)
+		goto errout;
+
+	err = rtnl_fill_statsinfo(skb, dev, RTM_NEWSTATS, 0, 0, 0, 0,
+				  &response_filters, &idxattr, &prividx, NULL);
+	if (err < 0) {
+		kfree_skb(skb);
+		goto errout;
+	}
+
+	rtnl_notify(skb, net, 0, RTNLGRP_STATS, NULL, GFP_ATOMIC);
+	return;
+
+errout:
+	rtnl_set_sk_err(net, RTNLGRP_STATS, err);
+}
+EXPORT_SYMBOL(rtnl_offload_xstats_notify);
+
 static int rtnl_stats_set(struct sk_buff *skb, struct nlmsghdr *nlh,
 			  struct netlink_ext_ack *extack)
 {
+	enum netdev_offload_xstats_type t_l3 = NETDEV_OFFLOAD_XSTATS_TYPE_L3;
 	struct rtnl_stats_dump_filters response_filters = {};
 	struct nlattr *tb[IFLA_STATS_GETSET_MAX + 1];
 	struct net *net = sock_net(skb->sk);
@@ -5807,6 +5842,7 @@ static int rtnl_stats_set(struct sk_buff *skb, struct nlmsghdr *nlh,
 	int idxattr = 0, prividx = 0;
 	struct if_stats_msg *ifsm;
 	struct sk_buff *nskb;
+	bool notify = false;
 	int err;
 
 	err = rtnl_valid_stats_req(nlh, netlink_strict_get_check(skb),
@@ -5837,6 +5873,32 @@ static int rtnl_stats_set(struct sk_buff *skb, struct nlmsghdr *nlh,
 			  ifla_stats_set_policy, extack);
 	if (err < 0)
 		return err;
+
+	if (tb[IFLA_STATS_SET_OFFLOAD_XSTATS_L3_STATS]) {
+		u8 req = nla_get_u8(tb[IFLA_STATS_SET_OFFLOAD_XSTATS_L3_STATS]);
+
+		if (req >= 2) {
+			NL_SET_ERR_MSG(extack, "l3_stats request should be 0 or 1");
+			return -EINVAL;
+		}
+
+		if (req) {
+			err = netdev_offload_xstats_enable(dev, t_l3, extack);
+			if (err)
+				return err;
+		} else {
+			netdev_offload_xstats_disable(dev, t_l3);
+		}
+
+		response_filters.mask[0] |=
+			IFLA_STATS_FILTER_BIT(IFLA_STATS_LINK_OFFLOAD_XSTATS);
+		response_filters.mask[IFLA_STATS_LINK_OFFLOAD_XSTATS] |=
+			IFLA_STATS_FILTER_BIT(IFLA_OFFLOAD_XSTATS_HW_S_INFO);
+		notify = true;
+	}
+
+	if (notify)
+		rtnl_offload_xstats_notify(dev);
 
 	nskb = nlmsg_new(if_nlmsg_stats_size(dev, &response_filters),
 			 GFP_KERNEL);
