@@ -1443,6 +1443,21 @@ static void nsim_dev_port_del_all(struct nsim_dev *nsim_dev)
 	mutex_unlock(&nsim_dev->port_list_lock);
 }
 
+static int nsim_dev_netdevice_event(struct notifier_block *nb,
+				    unsigned long event, void *ptr)
+{
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct nsim_dev *nsim_dev;
+	int err = 0;
+
+	nsim_dev = container_of(nb, struct nsim_dev, netdevice_nb);
+	err = nsim_dev_hwstats_event(nsim_dev, dev, event, ptr);
+	if (err)
+		return notifier_from_errno(err);
+
+	return NOTIFY_OK;
+}
+
 static int nsim_dev_port_add_all(struct nsim_dev *nsim_dev,
 				 unsigned int port_count)
 {
@@ -1498,9 +1513,19 @@ static int nsim_dev_reload_create(struct nsim_dev *nsim_dev,
 	if (err)
 		goto err_health_exit;
 
-	err = nsim_dev_port_add_all(nsim_dev, nsim_bus_dev->port_count);
+	nsim_dev->netdevice_nb.notifier_call = nsim_dev_netdevice_event;
+	err = register_netdevice_notifier_net(devlink_net(devlink),
+					      &nsim_dev->netdevice_nb);
 	if (err)
 		goto err_psample_exit;
+
+	err = nsim_dev_hwstats_init(nsim_dev);
+	if (err)
+		goto err_unregister_netdevice_notifier;
+
+	err = nsim_dev_port_add_all(nsim_dev, nsim_bus_dev->port_count);
+	if (err)
+		goto err_hwstats_exit;
 
 	nsim_dev->take_snapshot = debugfs_create_file("take_snapshot",
 						      0200,
@@ -1509,6 +1534,11 @@ static int nsim_dev_reload_create(struct nsim_dev *nsim_dev,
 						&nsim_dev_take_snapshot_fops);
 	return 0;
 
+err_hwstats_exit:
+	nsim_dev_hwstats_exit(nsim_dev);
+err_unregister_netdevice_notifier:
+	unregister_netdevice_notifier_net(devlink_net(devlink),
+					  &nsim_dev->netdevice_nb);
 err_psample_exit:
 	nsim_dev_psample_exit(nsim_dev);
 err_health_exit:
@@ -1595,15 +1625,30 @@ int nsim_drv_probe(struct nsim_bus_dev *nsim_bus_dev)
 	if (err)
 		goto err_bpf_dev_exit;
 
-	err = nsim_dev_port_add_all(nsim_dev, nsim_bus_dev->port_count);
+	nsim_dev->netdevice_nb.notifier_call = nsim_dev_netdevice_event;
+	err = register_netdevice_notifier_net(devlink_net(devlink),
+					      &nsim_dev->netdevice_nb);
 	if (err)
 		goto err_psample_exit;
+
+	err = nsim_dev_hwstats_init(nsim_dev);
+	if (err)
+		goto err_unregister_netdevice_notifier;
+
+	err = nsim_dev_port_add_all(nsim_dev, nsim_bus_dev->port_count);
+	if (err)
+		goto err_hwstats_exit;
 
 	nsim_dev->esw_mode = DEVLINK_ESWITCH_MODE_LEGACY;
 	devlink_set_features(devlink, DEVLINK_F_RELOAD);
 	devlink_register(devlink);
 	return 0;
 
+err_hwstats_exit:
+	nsim_dev_hwstats_exit(nsim_dev);
+err_unregister_netdevice_notifier:
+	unregister_netdevice_notifier_net(devlink_net(devlink),
+					  &nsim_dev->netdevice_nb);
 err_psample_exit:
 	nsim_dev_psample_exit(nsim_dev);
 err_bpf_dev_exit:
@@ -1648,6 +1693,9 @@ static void nsim_dev_reload_destroy(struct nsim_dev *nsim_dev)
 	mutex_unlock(&nsim_dev->vfs_lock);
 
 	nsim_dev_port_del_all(nsim_dev);
+	nsim_dev_hwstats_exit(nsim_dev);
+	unregister_netdevice_notifier_net(devlink_net(devlink),
+					  &nsim_dev->netdevice_nb);
 	nsim_dev_psample_exit(nsim_dev);
 	nsim_dev_health_exit(nsim_dev);
 	nsim_fib_destroy(devlink, nsim_dev->fib_data);
