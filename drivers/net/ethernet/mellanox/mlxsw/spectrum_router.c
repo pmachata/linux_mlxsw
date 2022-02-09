@@ -1961,6 +1961,54 @@ static void mlxsw_sp_ipip_demote_tunnel_by_ul_netdev(struct mlxsw_sp *mlxsw_sp,
 	}
 }
 
+static int
+mlxsw_sp_router_port_offload_xstats_cmd(struct mlxsw_sp_rif *rif,
+					unsigned long event,
+					struct netdev_notifier_offload_xstats_info *info);
+
+static int
+mlxsw_sp_netdevice_ipip_ol_xstats_cmd(struct mlxsw_sp *mlxsw_sp,
+				      struct net_device *ol_dev,
+				      unsigned long event,
+				      struct netdev_notifier_info *info)
+{
+	struct netdev_notifier_offload_xstats_info *xstats_info =
+				container_of(info, typeof(*xstats_info), info);
+	struct mlxsw_sp_ipip_entry *ipip_entry;
+	struct mlxsw_sp_rif *rif;
+
+	ipip_entry = mlxsw_sp_ipip_entry_find_by_ol_dev(mlxsw_sp, ol_dev);
+	if (ipip_entry) {
+		rif = &ipip_entry->ol_lb->common;
+		return mlxsw_sp_router_port_offload_xstats_cmd(rif, event,
+							       xstats_info);
+	}
+
+	printk(KERN_WARNING "no ipip entry for %s\n", ol_dev->name);
+	return 0;
+}
+
+static int
+mlxsw_sp_netdevice_ipip_ul_xstats_cmd(struct mlxsw_sp *mlxsw_sp,
+				      struct mlxsw_sp_ipip_entry *ipip_entry,
+				      struct net_device *ul_dev,
+				      unsigned long event,
+				      struct netdev_notifier_info *info)
+{
+	struct netdev_notifier_offload_xstats_info *xstats_info =
+				container_of(info, typeof(*xstats_info), info);
+	u32 ul_tb_id = mlxsw_sp_ipip_dev_ul_tb_id(ipip_entry->ol_dev);
+	struct mlxsw_sp_vr *vr;
+
+	vr = mlxsw_sp_vr_find(mlxsw_sp, ul_tb_id);
+	if (WARN_ON(!vr))
+		return -ENOENT;
+
+	// xxx ul_rif == NULL on Spectrum-1?
+	return mlxsw_sp_router_port_offload_xstats_cmd(vr->ul_rif, event,
+						       xstats_info);
+}
+
 int mlxsw_sp_netdevice_ipip_ol_event(struct mlxsw_sp *mlxsw_sp,
 				     struct net_device *ol_dev,
 				     unsigned long event,
@@ -2000,6 +2048,13 @@ int mlxsw_sp_netdevice_ipip_ol_event(struct mlxsw_sp *mlxsw_sp,
 	case NETDEV_CHANGEMTU:
 		err = mlxsw_sp_netdevice_ipip_ol_update_mtu(mlxsw_sp, ol_dev);
 		break;
+	case NETDEV_OFFLOAD_XSTATS_ENABLE:
+	case NETDEV_OFFLOAD_XSTATS_DISABLE:
+	case NETDEV_OFFLOAD_XSTATS_REPORT_USED:
+	case NETDEV_OFFLOAD_XSTATS_REPORT_DELTA:
+		err = mlxsw_sp_netdevice_ipip_ol_xstats_cmd(mlxsw_sp, ol_dev,
+							    event, info);
+		break;
 	}
 	mutex_unlock(&mlxsw_sp->router->lock);
 	return err;
@@ -2035,6 +2090,14 @@ __mlxsw_sp_netdevice_ipip_ul_event(struct mlxsw_sp *mlxsw_sp,
 		return mlxsw_sp_netdevice_ipip_ul_down_event(mlxsw_sp,
 							     ipip_entry,
 							     ul_dev);
+	case NETDEV_OFFLOAD_XSTATS_ENABLE:
+	case NETDEV_OFFLOAD_XSTATS_DISABLE:
+	case NETDEV_OFFLOAD_XSTATS_REPORT_USED:
+	case NETDEV_OFFLOAD_XSTATS_REPORT_DELTA:
+		return mlxsw_sp_netdevice_ipip_ul_xstats_cmd(mlxsw_sp,
+							     ipip_entry,
+							     ul_dev,
+							     event, info);
 	}
 	return 0;
 }
