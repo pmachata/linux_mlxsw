@@ -1529,8 +1529,8 @@ static bool mlxsw_sp_netdev_ipip_type(const struct mlxsw_sp *mlxsw_sp,
 	return false;
 }
 
-bool mlxsw_sp_netdev_is_ipip_ol(const struct mlxsw_sp *mlxsw_sp,
-				const struct net_device *dev)
+static bool mlxsw_sp_netdev_is_ipip_ol(const struct mlxsw_sp *mlxsw_sp,
+				       const struct net_device *dev)
 {
 	return mlxsw_sp_netdev_ipip_type(mlxsw_sp, dev, NULL);
 }
@@ -1574,16 +1574,10 @@ mlxsw_sp_ipip_entry_find_by_ul_dev(const struct mlxsw_sp *mlxsw_sp,
 	return NULL;
 }
 
-bool mlxsw_sp_netdev_is_ipip_ul(struct mlxsw_sp *mlxsw_sp,
-				const struct net_device *dev)
+static bool mlxsw_sp_netdev_is_ipip_ul(struct mlxsw_sp *mlxsw_sp,
+				       const struct net_device *dev)
 {
-	bool is_ipip_ul;
-
-	mutex_lock(&mlxsw_sp->router->lock);
-	is_ipip_ul = mlxsw_sp_ipip_entry_find_by_ul_dev(mlxsw_sp, dev, NULL);
-	mutex_unlock(&mlxsw_sp->router->lock);
-
-	return is_ipip_ul;
+	return mlxsw_sp_ipip_entry_find_by_ul_dev(mlxsw_sp, dev, NULL);
 }
 
 static bool mlxsw_sp_netdevice_ipip_can_offload(struct mlxsw_sp *mlxsw_sp,
@@ -1959,16 +1953,15 @@ static void mlxsw_sp_ipip_demote_tunnel_by_ul_netdev(struct mlxsw_sp *mlxsw_sp,
 	}
 }
 
-int mlxsw_sp_netdevice_ipip_ol_event(struct mlxsw_sp *mlxsw_sp,
-				     struct net_device *ol_dev,
-				     unsigned long event,
-				     struct netdev_notifier_info *info)
+static int mlxsw_sp_netdevice_ipip_ol_event(struct mlxsw_sp *mlxsw_sp,
+					    struct net_device *ol_dev,
+					    unsigned long event,
+					    struct netdev_notifier_info *info)
 {
 	struct netdev_notifier_changeupper_info *chup;
 	struct netlink_ext_ack *extack;
 	int err = 0;
 
-	mutex_lock(&mlxsw_sp->router->lock);
 	switch (event) {
 	case NETDEV_REGISTER:
 		err = mlxsw_sp_netdevice_ipip_ol_reg_event(mlxsw_sp, ol_dev);
@@ -1999,7 +1992,6 @@ int mlxsw_sp_netdevice_ipip_ol_event(struct mlxsw_sp *mlxsw_sp,
 		err = mlxsw_sp_netdevice_ipip_ol_update_mtu(mlxsw_sp, ol_dev);
 		break;
 	}
-	mutex_unlock(&mlxsw_sp->router->lock);
 	return err;
 }
 
@@ -2037,7 +2029,7 @@ __mlxsw_sp_netdevice_ipip_ul_event(struct mlxsw_sp *mlxsw_sp,
 	return 0;
 }
 
-int
+static int
 mlxsw_sp_netdevice_ipip_ul_event(struct mlxsw_sp *mlxsw_sp,
 				 struct net_device *ul_dev,
 				 unsigned long event,
@@ -2046,7 +2038,6 @@ mlxsw_sp_netdevice_ipip_ul_event(struct mlxsw_sp *mlxsw_sp,
 	struct mlxsw_sp_ipip_entry *ipip_entry = NULL;
 	int err = 0;
 
-	mutex_lock(&mlxsw_sp->router->lock);
 	while ((ipip_entry = mlxsw_sp_ipip_entry_find_by_ul_dev(mlxsw_sp,
 								ul_dev,
 								ipip_entry))) {
@@ -2076,7 +2067,6 @@ mlxsw_sp_netdevice_ipip_ul_event(struct mlxsw_sp *mlxsw_sp,
 			ipip_entry = prev;
 		}
 	}
-	mutex_unlock(&mlxsw_sp->router->lock);
 
 	return err;
 }
@@ -9410,22 +9400,26 @@ mlxsw_sp_router_port_offload_xstats_cmd(struct mlxsw_sp_rif *rif,
 	return 0;
 }
 
-int mlxsw_sp_netdevice_router_port_event(struct net_device *dev,
-					 unsigned long event, void *ptr)
+bool mlxsw_sp_is_vrf_event(unsigned long event, void *ptr)
+{
+	struct netdev_notifier_changeupper_info *info = ptr;
+
+	if (event != NETDEV_PRECHANGEUPPER && event != NETDEV_CHANGEUPPER)
+		return false;
+	return netif_is_l3_master(info->upper_dev);
+}
+
+static int
+mlxsw_sp_netdevice_vrf_event(struct mlxsw_sp *mlxsw_sp,
+			     struct net_device *l3_dev, unsigned long event,
+			     struct netdev_notifier_changeupper_info *info);
+
+static int mlxsw_sp_router_rif_event(struct mlxsw_sp *mlxsw_sp,
+				     struct mlxsw_sp_rif *rif,
+				     unsigned long event, void *ptr)
 {
 	struct netlink_ext_ack *extack = netdev_notifier_info_to_extack(ptr);
-	struct mlxsw_sp *mlxsw_sp;
-	struct mlxsw_sp_rif *rif;
 	int err = 0;
-
-	mlxsw_sp = mlxsw_sp_lower_get(dev);
-	if (!mlxsw_sp)
-		return 0;
-
-	mutex_lock(&mlxsw_sp->router->lock);
-	rif = mlxsw_sp_rif_find_by_dev(mlxsw_sp, dev);
-	if (!rif)
-		goto out;
 
 	switch (event) {
 	case NETDEV_CHANGEMTU:
@@ -9435,18 +9429,56 @@ int mlxsw_sp_netdevice_router_port_event(struct net_device *dev,
 	case NETDEV_PRE_CHANGEADDR:
 		err = mlxsw_sp_router_port_pre_changeaddr_event(rif, ptr);
 		break;
+	}
+
+	return err;
+}
+
+static int mlxsw_sp_router_netdevice_event(struct notifier_block *nb,
+					   unsigned long event, void *ptr)
+{
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct mlxsw_sp_router *router;
+	struct mlxsw_sp *mlxsw_sp;
+	struct mlxsw_sp_rif *rif;
+	int err = 0;
+
+	router = container_of(nb, struct mlxsw_sp_router, netdevice_nb);
+	mlxsw_sp = router->mlxsw_sp;
+
+	mutex_lock(&mlxsw_sp->router->lock);
+	printk(KERN_WARNING "router event %s %ld\n", dev->name, event);
+	rif = mlxsw_sp_rif_find_by_dev(mlxsw_sp, dev);
+
+	/* HW stats events are handled the same for all RIFs. */
+	switch (event) {
 	case NETDEV_OFFLOAD_XSTATS_ENABLE:
 	case NETDEV_OFFLOAD_XSTATS_DISABLE:
 	case NETDEV_OFFLOAD_XSTATS_REPORT_USED:
 	case NETDEV_OFFLOAD_XSTATS_REPORT_DELTA:
-		err = mlxsw_sp_router_port_offload_xstats_cmd(rif, event, ptr);
-		break;
-	default:
-		WARN_ON_ONCE(1);
-		break;
+		if (rif)
+			err = mlxsw_sp_router_port_offload_xstats_cmd(rif,
+								      event,
+								      ptr);
+		goto out;
+	}
+
+	if (mlxsw_sp_netdev_is_ipip_ol(mlxsw_sp, dev))
+		err = mlxsw_sp_netdevice_ipip_ol_event(mlxsw_sp, dev,
+						       event, ptr);
+	else if (mlxsw_sp_netdev_is_ipip_ul(mlxsw_sp, dev))
+		err = mlxsw_sp_netdevice_ipip_ul_event(mlxsw_sp, dev,
+						       event, ptr);
+	else if (mlxsw_sp_is_vrf_event(event, ptr)) {
+		printk(KERN_WARNING "router: VRF event %s\n", dev->name);
+		err = mlxsw_sp_netdevice_vrf_event(mlxsw_sp, dev, event, ptr);
+	} else if (rif) {
+		printk(KERN_WARNING "router: RIF event %s\n", dev->name);
+		err = mlxsw_sp_router_rif_event(mlxsw_sp, rif, event, ptr);
 	}
 
 out:
+	printk(KERN_WARNING "  done event %s %ld\n", dev->name, event);
 	mutex_unlock(&mlxsw_sp->router->lock);
 	return err;
 }
@@ -9479,19 +9511,19 @@ static void mlxsw_sp_port_vrf_leave(struct mlxsw_sp *mlxsw_sp,
 	__mlxsw_sp_inetaddr_event(mlxsw_sp, l3_dev, NETDEV_DOWN, NULL);
 }
 
-int mlxsw_sp_netdevice_vrf_event(struct net_device *l3_dev, unsigned long event,
-				 struct netdev_notifier_changeupper_info *info)
+static int
+mlxsw_sp_netdevice_vrf_event(struct mlxsw_sp *mlxsw_sp,
+			     struct net_device *l3_dev, unsigned long event,
+			     struct netdev_notifier_changeupper_info *info)
 {
-	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_lower_get(l3_dev);
 	int err = 0;
 
 	/* We do not create a RIF for a macvlan, but only use it to
 	 * direct more MAC addresses to the router.
 	 */
-	if (!mlxsw_sp || netif_is_macvlan(l3_dev))
+	if (netif_is_macvlan(l3_dev))
 		return 0;
 
-	mutex_lock(&mlxsw_sp->router->lock);
 	switch (event) {
 	case NETDEV_PRECHANGEUPPER:
 		break;
@@ -9506,8 +9538,24 @@ int mlxsw_sp_netdevice_vrf_event(struct net_device *l3_dev, unsigned long event,
 		}
 		break;
 	}
-	mutex_unlock(&mlxsw_sp->router->lock);
 
+	return err;
+}
+
+int ____mlxsw_sp_netdevice_vrf_event(struct net_device *l3_dev, unsigned long event,
+				     struct netdev_notifier_changeupper_info *info)
+{
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_lower_get(l3_dev);
+	int err = 0;
+
+	if (!mlxsw_sp || netif_is_macvlan(l3_dev)) {
+		printk(KERN_WARNING "skipping VRF handling for %s\n", l3_dev->name);
+		return 0;
+	}
+
+	mutex_lock(&mlxsw_sp->router->lock);
+	err = mlxsw_sp_netdevice_vrf_event(mlxsw_sp, l3_dev, event, info);
+	mutex_unlock(&mlxsw_sp->router->lock);
 	return err;
 }
 
@@ -10693,8 +10741,18 @@ int mlxsw_sp_router_init(struct mlxsw_sp *mlxsw_sp,
 	if (err)
 		goto err_register_fib_notifier;
 
+	mlxsw_sp->router->netdevice_nb.notifier_call =
+		mlxsw_sp_router_netdevice_event;
+	err = register_netdevice_notifier_net(mlxsw_sp_net(mlxsw_sp),
+					      &mlxsw_sp->router->netdevice_nb);
+	if (err)
+		goto err_register_netdev_notifier;
+
 	return 0;
 
+err_register_netdev_notifier:
+	unregister_fib_notifier(mlxsw_sp_net(mlxsw_sp),
+				&mlxsw_sp->router->fib_nb);
 err_register_fib_notifier:
 	unregister_nexthop_notifier(mlxsw_sp_net(mlxsw_sp),
 				    &mlxsw_sp->router->nexthop_nb);
@@ -10742,6 +10800,8 @@ err_router_ops_init:
 
 void mlxsw_sp_router_fini(struct mlxsw_sp *mlxsw_sp)
 {
+	unregister_netdevice_notifier_net(mlxsw_sp_net(mlxsw_sp),
+					  &mlxsw_sp->router->netdevice_nb);
 	unregister_fib_notifier(mlxsw_sp_net(mlxsw_sp),
 				&mlxsw_sp->router->fib_nb);
 	unregister_nexthop_notifier(mlxsw_sp_net(mlxsw_sp),
