@@ -27,6 +27,7 @@
 ALL_TESTS="
 	ping_ipv4
 	test_dscp
+	xxx
 "
 
 lib_dir=$(dirname $0)/../../../net/forwarding
@@ -37,6 +38,7 @@ source $lib_dir/lib.sh
 h1_create()
 {
 	simple_if_init $h1 192.0.2.1/28
+	mtu_set $h1 10000
 	tc qdisc add dev $h1 clsact
 	dscp_capture_install $h1 10
 }
@@ -45,12 +47,14 @@ h1_destroy()
 {
 	dscp_capture_uninstall $h1 10
 	tc qdisc del dev $h1 clsact
+	mtu_restore $h1
 	simple_if_fini $h1 192.0.2.1/28
 }
 
 h2_create()
 {
 	simple_if_init $h2 192.0.2.2/28
+	mtu_set $h2 10000
 	tc qdisc add dev $h2 clsact
 	dscp_capture_install $h2 20
 }
@@ -59,6 +63,7 @@ h2_destroy()
 {
 	dscp_capture_uninstall $h2 20
 	tc qdisc del dev $h2 clsact
+	mtu_restore $h2
 	simple_if_fini $h2 192.0.2.2/28
 }
 
@@ -68,8 +73,10 @@ switch_create()
 	ip link set dev br1 up
 	ip link set dev $swp1 master br1
 	ip link set dev $swp1 up
+	mtu_set $swp1 10000
 	ip link set dev $swp2 master br1
 	ip link set dev $swp2 up
+	mtu_set $swp2 10000
 
 	dcb app add dev $swp1 dscp-prio 10:0 11:1 12:2 13:3 14:4 15:5 16:6 17:7
 	dcb app add dev $swp2 dscp-prio 20:0 21:1 22:2 23:3 24:4 25:5 26:6 27:7
@@ -80,8 +87,10 @@ switch_destroy()
 	dcb app del dev $swp2 dscp-prio 20:0 21:1 22:2 23:3 24:4 25:5 26:6 27:7
 	dcb app del dev $swp1 dscp-prio 10:0 11:1 12:2 13:3 14:4 15:5 16:6 17:7
 
+	mtu_restore $swp2
 	ip link set dev $swp2 down
 	ip link set dev $swp2 nomaster
+	mtu_restore $swp1
 	ip link set dev $swp1 down
 	ip link set dev $swp1 nomaster
 	ip link del dev br1
@@ -169,6 +178,11 @@ test_dscp()
 	for prio in {0..7}; do
 		dscp_ping_test v$h1 192.0.2.1 192.0.2.2 $prio $h1 $h2
 	done
+}
+
+xxx()
+{
+	mausezahn $h1 -p 8000 -a own -b 01:80:c2:00:00:0e -c 0 payload=88:cc
 }
 
 trap cleanup EXIT
