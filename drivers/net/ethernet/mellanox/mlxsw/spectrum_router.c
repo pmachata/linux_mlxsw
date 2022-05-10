@@ -2784,15 +2784,14 @@ static int mlxsw_sp_router_netevent_event(struct notifier_block *nb,
 		/* We are in atomic context and can't take RTNL mutex,
 		 * so use RCU variant to walk the device chain.
 		 */
-		mlxsw_sp_port = mlxsw_sp_port_lower_dev_hold(p->dev);
+		rcu_read_lock();
+		mlxsw_sp_port = mlxsw_sp_port_dev_lower_find_rcu(p->dev);
+		rcu_read_unlock();
 		if (!mlxsw_sp_port)
 			return NOTIFY_DONE;
 
-		mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
 		interval = jiffies_to_msecs(NEIGH_VAR(p, DELAY_PROBE_TIME));
-		mlxsw_sp->router->neighs_update.interval = interval;
-
-		mlxsw_sp_port_dev_put(mlxsw_sp_port);
+		router->neighs_update.interval = interval;
 		break;
 	case NETEVENT_NEIGH_UPDATE:
 		n = ptr;
