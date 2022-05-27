@@ -8321,6 +8321,21 @@ static u64 mlxsw_sp_rif_mac_profiles_occ_get(void *priv)
 	return atomic_read(&mlxsw_sp->router->rif_mac_profiles_count);
 }
 
+static u64 mlxsw_sp_rifs_occ_get(void *priv)
+{
+	const struct mlxsw_sp *mlxsw_sp = priv;
+	int num = 0;
+	int i;
+
+	mutex_lock(&mlxsw_sp->router->lock);
+	for (i = 0; i < MLXSW_CORE_RES_GET(mlxsw_sp->core, MAX_RIFS); i++)
+		if (mlxsw_sp->router->rifs[i])
+			num++;
+	mutex_unlock(&mlxsw_sp->router->lock);
+
+	return num;
+}
+
 static struct mlxsw_sp_rif_mac_profile *
 mlxsw_sp_rif_mac_profile_create(struct mlxsw_sp *mlxsw_sp, const char *mac,
 				struct netlink_ext_ack *extack)
@@ -9821,6 +9836,10 @@ static int mlxsw_sp_rifs_init(struct mlxsw_sp *mlxsw_sp)
 					  MLXSW_SP_RESOURCE_RIF_MAC_PROFILES,
 					  mlxsw_sp_rif_mac_profiles_occ_get,
 					  mlxsw_sp);
+	devlink_resource_occ_get_register(devlink,
+					  MLXSW_SP_RESOURCE_RIFS,
+					  mlxsw_sp_rifs_occ_get,
+					  mlxsw_sp);
 
 	return 0;
 }
@@ -9833,6 +9852,7 @@ static void mlxsw_sp_rifs_fini(struct mlxsw_sp *mlxsw_sp)
 	for (i = 0; i < MLXSW_CORE_RES_GET(mlxsw_sp->core, MAX_RIFS); i++)
 		WARN_ON_ONCE(mlxsw_sp->router->rifs[i]);
 
+	devlink_resource_occ_get_unregister(devlink, MLXSW_SP_RESOURCE_RIFS);
 	devlink_resource_occ_get_unregister(devlink,
 					    MLXSW_SP_RESOURCE_RIF_MAC_PROFILES);
 	WARN_ON(!idr_is_empty(&mlxsw_sp->router->rif_mac_profiles_idr));
