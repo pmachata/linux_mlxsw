@@ -62,7 +62,7 @@ for current_test in ${TESTS:-$ALL_TESTS}; do
 			else
 				log_test "'$current_test' [$profile] overflow $target"
 			fi
-			${current_test}_cleanup
+			${current_test}_cleanup $target
 			RET_FIN=$(( RET_FIN || RET ))
 		done
 	done
