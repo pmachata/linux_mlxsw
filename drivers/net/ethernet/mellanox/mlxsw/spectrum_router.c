@@ -69,6 +69,11 @@ struct mlxsw_sp_rif {
 	bool counter_egress_valid;
 };
 
+struct net_device *mlxsw_sp_rif_dev(const struct mlxsw_sp_rif *rif)
+{
+	return rif->dev;
+}
+
 struct mlxsw_sp_rif_params {
 	struct net_device *dev;
 	union {
@@ -2325,7 +2330,7 @@ static void mlxsw_sp_router_neigh_ent_ipv4_process(struct mlxsw_sp *mlxsw_sp,
 	}
 
 	dipn = htonl(dip);
-	dev = mlxsw_sp->router->rifs[rif]->dev;
+	dev = mlxsw_sp_rif_dev(mlxsw_sp->router->rifs[rif]);
 	n = neigh_lookup(&arp_tbl, &dipn, dev);
 	if (!n)
 		return;
@@ -2353,7 +2358,7 @@ static void mlxsw_sp_router_neigh_ent_ipv6_process(struct mlxsw_sp *mlxsw_sp,
 		return;
 	}
 
-	dev = mlxsw_sp->router->rifs[rif]->dev;
+	dev = mlxsw_sp_rif_dev(mlxsw_sp->router->rifs[rif]);
 	n = neigh_lookup(&nd_tbl, &dip, dev);
 	if (!n)
 		return;
@@ -7688,7 +7693,7 @@ mlxsw_sp_rif_find_by_dev(const struct mlxsw_sp *mlxsw_sp,
 
 	for (i = 0; i < max_rifs; i++)
 		if (mlxsw_sp->router->rifs[i] &&
-		    mlxsw_sp->router->rifs[i]->dev == dev)
+		    mlxsw_sp_rif_dev(mlxsw_sp->router->rifs[i]) == dev)
 			return mlxsw_sp->router->rifs[i];
 
 	return NULL;
@@ -7781,7 +7786,7 @@ mlxsw_sp_rif_should_config(struct mlxsw_sp_rif *rif, struct net_device *dev,
 			return true;
 
 		if (rif && addr_list_empty &&
-		    !netif_is_l3_slave(rif->dev))
+		    !netif_is_l3_slave(mlxsw_sp_rif_dev(rif)))
 			return true;
 		/* It is possible we already removed the RIF ourselves
 		 * if it was assigned to a netdev that is now a bridge
@@ -7871,7 +7876,8 @@ u16 mlxsw_sp_ipip_lb_rif_index(const struct mlxsw_sp_rif_ipip_lb *lb_rif)
 
 u16 mlxsw_sp_ipip_lb_ul_vr_id(const struct mlxsw_sp_rif_ipip_lb *lb_rif)
 {
-	u32 ul_tb_id = mlxsw_sp_ipip_dev_ul_tb_id(lb_rif->common.dev);
+	struct net_device *dev = mlxsw_sp_rif_dev(&lb_rif->common);
+	u32 ul_tb_id = mlxsw_sp_ipip_dev_ul_tb_id(dev);
 	struct mlxsw_sp_vr *ul_vr;
 
 	ul_vr = mlxsw_sp_vr_get(lb_rif->common.mlxsw_sp, ul_tb_id, NULL);
@@ -8049,11 +8055,6 @@ mlxsw_sp_router_hwstats_notify_schedule(struct net_device *dev)
 int mlxsw_sp_rif_dev_ifindex(const struct mlxsw_sp_rif *rif)
 {
 	return rif->dev->ifindex;
-}
-
-const struct net_device *mlxsw_sp_rif_dev(const struct mlxsw_sp_rif *rif)
-{
-	return rif->dev;
 }
 
 static void mlxsw_sp_rif_push_l3_stats(struct mlxsw_sp_rif *rif)
