@@ -50,6 +50,21 @@ struct mlxsw_sp_vr;
 struct mlxsw_sp_lpm_tree;
 struct mlxsw_sp_rif_ops;
 
+struct mlxsw_sp_crif_key {
+	struct net_device *dev;
+};
+
+struct mlxsw_sp_crif {
+	struct mlxsw_sp_crif_key key;
+	struct rhash_head ht_node;
+};
+
+static const struct rhashtable_params mlxsw_sp_crif_ht_params = {
+	.key_offset = offsetof(struct mlxsw_sp_crif, key),
+	.key_len = sizeof_field(struct mlxsw_sp_crif, key),
+	.head_offset = offsetof(struct mlxsw_sp_crif, ht_node),
+};
+
 struct mlxsw_sp_rif {
 	struct list_head nexthop_list;
 	struct list_head neigh_list;
@@ -1052,6 +1067,55 @@ u32 mlxsw_sp_ipip_dev_ul_tb_id(const struct net_device *ol_dev)
 	rcu_read_unlock();
 
 	return tb_id;
+}
+
+static struct mlxsw_sp_crif *
+mlxsw_sp_crif_alloc(struct net_device *dev)
+{
+	struct mlxsw_sp_crif_key key;
+	struct mlxsw_sp_crif *crif;
+
+	crif = kzalloc(sizeof(*crif), GFP_KERNEL);
+	if (!crif)
+		return NULL;
+
+	key = (struct mlxsw_sp_crif_key) {
+		.dev = dev,
+	};
+
+	crif->key = key;
+
+	return crif;
+}
+
+static void mlxsw_sp_crif_free(struct mlxsw_sp_crif *crif)
+{
+	kfree(crif);
+}
+
+static int mlxsw_sp_crif_insert(struct mlxsw_sp_router *router,
+				struct mlxsw_sp_crif *crif)
+{
+	return rhashtable_insert_fast(&router->crif_ht, &crif->ht_node,
+				      mlxsw_sp_crif_ht_params);
+}
+
+static void mlxsw_sp_crif_remove(struct mlxsw_sp_router *router,
+				 struct mlxsw_sp_crif *crif)
+{
+	rhashtable_remove_fast(&router->crif_ht, &crif->ht_node,
+			       mlxsw_sp_crif_ht_params);
+}
+
+static struct mlxsw_sp_crif *
+mlxsw_sp_crif_lookup(struct mlxsw_sp_router *router, const struct net_device *dev)
+{
+	struct mlxsw_sp_crif_key key = {
+		.dev = (struct net_device *) dev,
+	};
+
+	return rhashtable_lookup_fast(&router->crif_ht, &key,
+				      mlxsw_sp_crif_ht_params);
 }
 
 static struct mlxsw_sp_rif *
@@ -9108,6 +9172,106 @@ static int mlxsw_sp_router_port_pre_changeaddr_event(struct mlxsw_sp_rif *rif,
 	return -ENOBUFS;
 }
 
+static bool mlxsw_sp_router_netdevice_interesting(struct mlxsw_sp *mlxsw_sp,
+						  struct net_device *dev)
+{
+	struct vlan_dev_priv *vlan;
+
+	if (netif_is_lag_master(dev) ||
+	    netif_is_bridge_master(dev) ||
+	    mlxsw_sp_port_dev_check(dev) ||
+	    mlxsw_sp_netdev_is_ipip_ol(mlxsw_sp, dev) ||
+	    netif_is_l3_master(dev) ||
+	    dev == mlxsw_sp_net(mlxsw_sp)->loopback_dev)
+		return true;
+
+	if (!is_vlan_dev(dev))
+		return false;
+
+	vlan = vlan_dev_priv(dev);
+	return netif_is_lag_master(vlan->real_dev) ||
+	       netif_is_bridge_master(vlan->real_dev) ||
+	       mlxsw_sp_port_dev_check(vlan->real_dev);
+}
+
+static struct mlxsw_sp_crif *
+mlxsw_sp_crif_register(struct mlxsw_sp_router *router, struct net_device *dev)
+{
+	struct mlxsw_sp_crif *crif;
+	int err;
+
+	crif = mlxsw_sp_crif_alloc(dev);
+	if (!crif)
+		return ERR_PTR(-ENOMEM);
+
+	err = mlxsw_sp_crif_insert(router, crif);
+	if (err)
+		goto err_netdev_insert;
+
+	return crif;
+
+err_netdev_insert:
+	mlxsw_sp_crif_free(crif);
+	return ERR_PTR(err);
+}
+
+static void mlxsw_sp_crif_unregister(struct mlxsw_sp_router *router,
+				     struct mlxsw_sp_crif *crif)
+{
+	mlxsw_sp_crif_remove(router, crif);
+	mlxsw_sp_crif_free(crif);
+}
+
+static int mlxsw_sp_netdevice_register(struct mlxsw_sp_router *router,
+				       struct net_device *dev)
+{
+	struct mlxsw_sp_crif *crif;
+
+	if (!mlxsw_sp_router_netdevice_interesting(router->mlxsw_sp, dev))
+		return 0;
+
+	crif = mlxsw_sp_crif_register(router, dev);
+	return PTR_ERR_OR_ZERO(crif);
+}
+
+static void mlxsw_sp_netdevice_unregister(struct mlxsw_sp_router *router,
+					  struct net_device *dev)
+{
+	struct mlxsw_sp_crif *crif;
+
+	crif = mlxsw_sp_crif_lookup(router, dev);
+	if (!crif)
+		return;
+
+	mlxsw_sp_crif_unregister(router, crif);
+}
+
+static int mlxsw_sp_router_crif_event(struct notifier_block *nb,
+				      unsigned long event, void *ptr)
+{
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct mlxsw_sp_router *router;
+	int err = 0;
+
+	if (event != NETDEV_REGISTER &&
+	    event != NETDEV_UNREGISTER)
+		goto out;
+
+	router = container_of(nb, struct mlxsw_sp_router, crif_nb);
+
+	mutex_lock(&router->lock);
+
+	if (event == NETDEV_REGISTER)
+		err = mlxsw_sp_netdevice_register(router, dev);
+	else
+		mlxsw_sp_netdevice_unregister(router, dev);
+
+	mutex_unlock(&router->lock);
+
+out:
+	return notifier_from_errno(err);
+}
+
 static bool mlxsw_sp_is_offload_xstats_event(unsigned long event)
 {
 	switch (event) {
@@ -10504,6 +10668,18 @@ int mlxsw_sp_router_init(struct mlxsw_sp *mlxsw_sp,
 	if (err)
 		goto err_ipips_init;
 
+	err = rhashtable_init(&mlxsw_sp->router->crif_ht,
+			      &mlxsw_sp_crif_ht_params);
+	if (err)
+		goto err_crif_ht_init;
+
+	mlxsw_sp->router->crif_nb.notifier_call = mlxsw_sp_router_crif_event;
+	err = register_netdevice_notifier_net(mlxsw_sp_net(mlxsw_sp),
+					      &mlxsw_sp->router->crif_nb);
+
+	if (err)
+		goto err_register_crif_notifier;
+
 	err = mlxsw_sp_rifs_init(mlxsw_sp);
 	if (err)
 		goto err_rifs_init;
@@ -10633,6 +10809,11 @@ err_nexthop_group_ht_init:
 err_nexthop_ht_init:
 	mlxsw_sp_rifs_fini(mlxsw_sp);
 err_rifs_init:
+	unregister_netdevice_notifier_net(mlxsw_sp_net(mlxsw_sp),
+					  &mlxsw_sp->router->crif_nb);
+err_register_crif_notifier:
+	rhashtable_destroy(&mlxsw_sp->router->crif_ht);
+err_crif_ht_init:
 	mlxsw_sp_ipips_fini(mlxsw_sp);
 err_ipips_init:
 	__mlxsw_sp_router_fini(mlxsw_sp);
@@ -10667,6 +10848,9 @@ void mlxsw_sp_router_fini(struct mlxsw_sp *mlxsw_sp)
 	rhashtable_destroy(&router->nexthop_group_ht);
 	rhashtable_destroy(&router->nexthop_ht);
 	mlxsw_sp_rifs_fini(mlxsw_sp);
+	unregister_netdevice_notifier_net(mlxsw_sp_net(mlxsw_sp),
+					  &mlxsw_sp->router->crif_nb);
+	rhashtable_destroy(&mlxsw_sp->router->crif_ht);
 	mlxsw_sp_ipips_fini(mlxsw_sp);
 	__mlxsw_sp_router_fini(mlxsw_sp);
 	cancel_delayed_work_sync(&router->nh_grp_activity_dw);

@@ -17,6 +17,7 @@ struct mlxsw_sp_router_nve_decap {
 
 struct mlxsw_sp_router {
 	struct mlxsw_sp *mlxsw_sp;
+	struct rhashtable crif_ht;
 	struct mlxsw_sp_rif **rifs;
 	struct idr rif_mac_profiles_idr;
 	atomic_t rif_mac_profiles_count;
@@ -50,6 +51,7 @@ struct mlxsw_sp_router {
 	struct notifier_block inetaddr_valid_nb;
 	struct notifier_block inet6addr_valid_nb;
 	struct notifier_block netdevice_nb;
+	struct notifier_block crif_nb;
 	const struct mlxsw_sp_rif_ops **rif_ops_arr;
 	const struct mlxsw_sp_ipip_ops **ipip_ops_arr;
 	struct mlxsw_sp_router_nve_decap nve_decap_config;
