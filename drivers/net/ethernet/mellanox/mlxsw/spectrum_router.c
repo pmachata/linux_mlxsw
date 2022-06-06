@@ -58,6 +58,7 @@ struct mlxsw_sp_crif {
 	struct mlxsw_sp_crif_key key;
 	struct rhash_head ht_node;
 	struct list_head vrf_crif_list_node;
+	struct mlxsw_sp_rif *rif;
 };
 
 static const struct rhashtable_params mlxsw_sp_crif_ht_params = {
@@ -67,9 +68,9 @@ static const struct rhashtable_params mlxsw_sp_crif_ht_params = {
 };
 
 struct mlxsw_sp_rif {
+	struct mlxsw_sp_crif *crif; /* NULL for underlay RIF */
 	struct list_head nexthop_list;
 	struct list_head neigh_list;
-	struct net_device *dev; /* NULL for underlay RIF */
 	struct mlxsw_sp_fid *fid;
 	unsigned char addr[ETH_ALEN];
 	int mtu;
@@ -87,7 +88,9 @@ struct mlxsw_sp_rif {
 
 struct net_device *mlxsw_sp_rif_dev(const struct mlxsw_sp_rif *rif)
 {
-	return rif->dev;
+	if (rif->crif)
+		return rif->crif->key.dev;
+	return NULL;
 }
 
 struct mlxsw_sp_rif_params {
@@ -1091,6 +1094,7 @@ mlxsw_sp_crif_alloc(struct net_device *dev)
 
 static void mlxsw_sp_crif_free(struct mlxsw_sp_crif *crif)
 {
+	WARN_ON(crif->rif);
 	kfree(crif);
 }
 
@@ -7944,7 +7948,7 @@ static int mlxsw_sp_rif_index_alloc(struct mlxsw_sp *mlxsw_sp, u16 *p_rif_index)
 
 static struct mlxsw_sp_rif *mlxsw_sp_rif_alloc(size_t rif_size, u16 rif_index,
 					       u16 vr_id,
-					       struct net_device *l3_dev)
+					       struct mlxsw_sp_crif *crif)
 {
 	struct mlxsw_sp_rif *rif;
 
@@ -7954,10 +7958,13 @@ static struct mlxsw_sp_rif *mlxsw_sp_rif_alloc(size_t rif_size, u16 rif_index,
 
 	INIT_LIST_HEAD(&rif->nexthop_list);
 	INIT_LIST_HEAD(&rif->neigh_list);
-	if (l3_dev) {
+	if (crif) {
+		struct net_device *l3_dev = crif->key.dev;
+
 		ether_addr_copy(rif->addr, l3_dev->dev_addr);
 		rif->mtu = l3_dev->mtu;
-		rif->dev = l3_dev;
+		rif->crif = crif;
+		crif->rif = rif;
 	}
 	rif->vr_id = vr_id;
 	rif->rif_index = rif_index;
@@ -7967,6 +7974,8 @@ static struct mlxsw_sp_rif *mlxsw_sp_rif_alloc(size_t rif_size, u16 rif_index,
 
 static void mlxsw_sp_rif_free(struct mlxsw_sp_rif *rif)
 {
+	if (rif->crif)
+		rif->crif->rif = NULL;
 	kfree(rif);
 }
 
@@ -8186,6 +8195,7 @@ mlxsw_sp_rif_create(struct mlxsw_sp *mlxsw_sp,
 {
 	u32 tb_id = l3mdev_fib_table(params->dev);
 	const struct mlxsw_sp_rif_ops *ops;
+	struct mlxsw_sp_crif *crif = NULL;
 	struct mlxsw_sp_fid *fid = NULL;
 	enum mlxsw_sp_rif_type type;
 	struct mlxsw_sp_rif *rif;
@@ -8207,7 +8217,13 @@ mlxsw_sp_rif_create(struct mlxsw_sp *mlxsw_sp,
 		goto err_rif_index_alloc;
 	}
 
-	rif = mlxsw_sp_rif_alloc(ops->rif_size, rif_index, vr->id, params->dev);
+	crif = mlxsw_sp_crif_lookup(mlxsw_sp->router, params->dev);
+	if (WARN_ON(!crif)) {
+		err = -ENOENT;
+		goto err_rif_alloc;
+	}
+
+	rif = mlxsw_sp_rif_alloc(ops->rif_size, rif_index, vr->id, crif);
 	if (!rif) {
 		err = -ENOMEM;
 		goto err_rif_alloc;
