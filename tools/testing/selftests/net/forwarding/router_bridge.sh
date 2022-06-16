@@ -4,6 +4,9 @@
 ALL_TESTS="
 	ping_ipv4
 	ping_ipv6
+	respin_config
+	ping_ipv4
+	ping_ipv6
 "
 NUM_NETIFS=4
 source lib.sh
@@ -61,6 +64,15 @@ router_destroy()
 	ip link del dev br1
 }
 
+respin_config()
+{
+	log_info "Remaster bridge slave"
+
+	ip link set dev $swp1 nomaster
+	sleep 2
+	ip link set dev $swp1 master br1
+}
+
 setup_prepare()
 {
 	h1=${NETIFS[p1]}
@@ -102,6 +114,8 @@ ping_ipv6()
 {
 	ping6_test $h1 2001:db8:2::2
 }
+
+# xxx TODO: devlink reload and enslave the port to an already-configured bridge
 
 trap cleanup EXIT
 
