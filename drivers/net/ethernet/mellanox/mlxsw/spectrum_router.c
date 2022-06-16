@@ -3526,15 +3526,15 @@ static int __mlxsw_sp_nexthop_eth_update(struct mlxsw_sp *mlxsw_sp,
 					 bool force, char *ratr_pl)
 {
 	struct mlxsw_sp_neigh_entry *neigh_entry = nh->neigh_entry;
+	struct mlxsw_sp_rif *rif = mlxsw_sp_nexthop_rif(nh);
 	enum mlxsw_reg_ratr_op op;
-	u16 rif_index;
 
-	rif_index = nh->rif ? nh->rif->rif_index :
-			      mlxsw_sp->router->lb_rif_index;
+	if (!rif) // xxx never holds? Even blackhole routes now have a CRIF with a RIF.
+		rif = mlxsw_sp->router->lb_crif->rif;
 	op = force ? MLXSW_REG_RATR_OP_WRITE_WRITE_ENTRY :
 		     MLXSW_REG_RATR_OP_WRITE_WRITE_ENTRY_ON_ACTIVITY;
 	mlxsw_reg_ratr_pack(ratr_pl, op, true, MLXSW_REG_RATR_TYPE_ETHERNET,
-			    adj_index, rif_index);
+			    adj_index, rif->rif_index);
 	switch (nh->action) {
 	case MLXSW_SP_NEXTHOP_ACTION_FORWARD:
 		mlxsw_reg_ratr_eth_entry_pack(ratr_pl, neigh_entry->ha);
@@ -4497,7 +4497,7 @@ static int mlxsw_sp_adj_trap_entry_init(struct mlxsw_sp *mlxsw_sp)
 	mlxsw_reg_ratr_pack(ratr_pl, MLXSW_REG_RATR_OP_WRITE_WRITE_ENTRY, true,
 			    MLXSW_REG_RATR_TYPE_ETHERNET,
 			    mlxsw_sp->router->adj_trap_index,
-			    mlxsw_sp->router->lb_rif_index);
+			    mlxsw_sp->router->lb_crif->rif->rif_index);
 	mlxsw_reg_ratr_trap_action_set(ratr_pl, trap_action);
 	mlxsw_reg_ratr_trap_id_set(ratr_pl, MLXSW_TRAP_ID_RTR_EGRESS0);
 	err = mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(ratr), ratr_pl);
@@ -4813,15 +4813,13 @@ static bool mlxsw_sp_nexthop_obj_is_gateway(struct mlxsw_sp *mlxsw_sp,
 static void mlxsw_sp_nexthop_obj_blackhole_init(struct mlxsw_sp *mlxsw_sp,
 						struct mlxsw_sp_nexthop *nh)
 {
-	u16 lb_rif_index = mlxsw_sp->router->lb_rif_index;
-
 	nh->action = MLXSW_SP_NEXTHOP_ACTION_DISCARD;
 	nh->should_offload = 1;
 	/* While nexthops that discard packets do not forward packets
 	 * via an egress RIF, they still need to be programmed using a
 	 * valid RIF, so use the loopback RIF created during init.
 	 */
-	nh->rif = mlxsw_sp->router->rifs[lb_rif_index];
+	nh->rif = mlxsw_sp->router->lb_crif->rif;
 }
 
 static void mlxsw_sp_nexthop_obj_blackhole_fini(struct mlxsw_sp *mlxsw_sp,
@@ -9943,6 +9941,7 @@ mlxsw_sp_rif_ipip_lb_ul_rif_op(struct mlxsw_sp_rif *ul_rif, bool enable)
 
 static struct mlxsw_sp_rif *
 mlxsw_sp_ul_rif_create(struct mlxsw_sp *mlxsw_sp, struct mlxsw_sp_vr *vr,
+		       struct mlxsw_sp_crif *crif,
 		       struct netlink_ext_ack *extack)
 {
 	struct mlxsw_sp_rif *ul_rif;
@@ -9955,7 +9954,7 @@ mlxsw_sp_ul_rif_create(struct mlxsw_sp *mlxsw_sp, struct mlxsw_sp_vr *vr,
 		return ERR_PTR(err);
 	}
 
-	ul_rif = mlxsw_sp_rif_alloc(sizeof(*ul_rif), rif_index, vr->id, NULL);
+	ul_rif = mlxsw_sp_rif_alloc(sizeof(*ul_rif), rif_index, vr->id, crif);
 	if (!ul_rif)
 		return ERR_PTR(-ENOMEM);
 
@@ -9970,7 +9969,7 @@ mlxsw_sp_ul_rif_create(struct mlxsw_sp *mlxsw_sp, struct mlxsw_sp_vr *vr,
 
 ul_rif_op_err:
 	mlxsw_sp->router->rifs[rif_index] = NULL;
-	kfree(ul_rif);
+	mlxsw_sp_rif_free(ul_rif);
 	return ERR_PTR(err);
 }
 
@@ -9981,11 +9980,12 @@ static void mlxsw_sp_ul_rif_destroy(struct mlxsw_sp_rif *ul_rif)
 	atomic_dec(&mlxsw_sp->router->rifs_count);
 	mlxsw_sp_rif_ipip_lb_ul_rif_op(ul_rif, false);
 	mlxsw_sp->router->rifs[ul_rif->rif_index] = NULL;
-	kfree(ul_rif);
+	mlxsw_sp_rif_free(ul_rif);
 }
 
 static struct mlxsw_sp_rif *
 mlxsw_sp_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 tb_id,
+		    struct mlxsw_sp_crif *crif,
 		    struct netlink_ext_ack *extack)
 {
 	struct mlxsw_sp_vr *vr;
@@ -9995,10 +9995,12 @@ mlxsw_sp_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 tb_id,
 	if (IS_ERR(vr))
 		return ERR_CAST(vr);
 
-	if (refcount_inc_not_zero(&vr->ul_rif_refcnt))
+	if (refcount_inc_not_zero(&vr->ul_rif_refcnt)) {
+		WARN_ON(vr->ul_rif->crif != crif);
 		return vr->ul_rif;
+	}
 
-	vr->ul_rif = mlxsw_sp_ul_rif_create(mlxsw_sp, vr, extack);
+	vr->ul_rif = mlxsw_sp_ul_rif_create(mlxsw_sp, vr, crif, extack);
 	if (IS_ERR(vr->ul_rif)) {
 		err = PTR_ERR(vr->ul_rif);
 		goto err_ul_rif_create;
@@ -10029,14 +10031,15 @@ static void mlxsw_sp_ul_rif_put(struct mlxsw_sp_rif *ul_rif)
 	mlxsw_sp_vr_put(mlxsw_sp, vr);
 }
 
-int mlxsw_sp_router_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 ul_tb_id,
-			       u16 *ul_rif_index)
+static int __mlxsw_sp_router_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 ul_tb_id,
+					struct mlxsw_sp_crif *crif,
+					u16 *ul_rif_index)
 {
 	struct mlxsw_sp_rif *ul_rif;
 	int err = 0;
 
 	mutex_lock(&mlxsw_sp->router->lock);
-	ul_rif = mlxsw_sp_ul_rif_get(mlxsw_sp, ul_tb_id, NULL);
+	ul_rif = mlxsw_sp_ul_rif_get(mlxsw_sp, ul_tb_id, crif, NULL);
 	if (IS_ERR(ul_rif)) {
 		err = PTR_ERR(ul_rif);
 		goto out;
@@ -10045,6 +10048,13 @@ int mlxsw_sp_router_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 ul_tb_id,
 out:
 	mutex_unlock(&mlxsw_sp->router->lock);
 	return err;
+}
+
+int mlxsw_sp_router_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 ul_tb_id,
+			       u16 *ul_rif_index)
+{
+	return __mlxsw_sp_router_ul_rif_get(mlxsw_sp, ul_tb_id, NULL,
+					    ul_rif_index);
 }
 
 void mlxsw_sp_router_ul_rif_put(struct mlxsw_sp *mlxsw_sp, u16 ul_rif_index)
@@ -10072,7 +10082,8 @@ mlxsw_sp2_rif_ipip_lb_configure(struct mlxsw_sp_rif *rif,
 	struct mlxsw_sp_rif *ul_rif;
 	int err;
 
-	ul_rif = mlxsw_sp_ul_rif_get(mlxsw_sp, ul_tb_id, NULL);
+	// xxx could we use an actual CRIF instead of passing NULL?
+	ul_rif = mlxsw_sp_ul_rif_get(mlxsw_sp, ul_tb_id, NULL, NULL);
 	if (IS_ERR(ul_rif))
 		return PTR_ERR(ul_rif);
 
@@ -10540,28 +10551,42 @@ static void __mlxsw_sp_router_fini(struct mlxsw_sp *mlxsw_sp)
 	mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(rgcr), rgcr_pl);
 }
 
-static int mlxsw_sp_lb_rif_init(struct mlxsw_sp *mlxsw_sp)
+static int mlxsw_sp_lb_crif_init(struct mlxsw_sp *mlxsw_sp)
 {
+	struct net_device *lb_dev = mlxsw_sp_net(mlxsw_sp)->loopback_dev;
+	struct mlxsw_sp_crif *lb_crif;
 	u16 lb_rif_index;
 	int err;
+
+	lb_crif = mlxsw_sp_crif_alloc(lb_dev);
+	if (!lb_crif)
+		return -ENOMEM;
 
 	/* Create a generic loopback RIF associated with the main table
 	 * (default VRF). Any table can be used, but the main table exists
 	 * anyway, so we do not waste resources.
 	 */
-	err = mlxsw_sp_router_ul_rif_get(mlxsw_sp, RT_TABLE_MAIN,
-					 &lb_rif_index);
+	err = __mlxsw_sp_router_ul_rif_get(mlxsw_sp, RT_TABLE_MAIN,
+					   lb_crif, &lb_rif_index);
 	if (err)
-		return err;
+		goto err_ul_rif_get;
 
-	mlxsw_sp->router->lb_rif_index = lb_rif_index;
+	mlxsw_sp->router->lb_crif = lb_crif;
 
 	return 0;
+
+err_ul_rif_get:
+	mlxsw_sp_crif_free(lb_crif);
+	return err;
 }
 
-static void mlxsw_sp_lb_rif_fini(struct mlxsw_sp *mlxsw_sp)
+static void mlxsw_sp_lb_crif_fini(struct mlxsw_sp *mlxsw_sp)
 {
-	mlxsw_sp_router_ul_rif_put(mlxsw_sp, mlxsw_sp->router->lb_rif_index);
+	struct mlxsw_sp_crif *lb_crif = mlxsw_sp->router->lb_crif;
+
+	/* We are in the destructor, so no locking is necessary. */
+	mlxsw_sp_ul_rif_put(lb_crif->rif);
+	mlxsw_sp_crif_free(lb_crif);
 }
 
 static int mlxsw_sp1_router_init(struct mlxsw_sp *mlxsw_sp)
@@ -10657,9 +10682,9 @@ int mlxsw_sp_router_init(struct mlxsw_sp *mlxsw_sp,
 	if (err)
 		goto err_vrs_init;
 
-	err = mlxsw_sp_lb_rif_init(mlxsw_sp);
+	err = mlxsw_sp_lb_crif_init(mlxsw_sp);
 	if (err)
-		goto err_lb_rif_init;
+		goto err_lb_crif_init;
 
 	err = mlxsw_sp_neigh_init(mlxsw_sp);
 	if (err)
@@ -10745,8 +10770,8 @@ err_dscp_init:
 err_mp_hash_init:
 	mlxsw_sp_neigh_fini(mlxsw_sp);
 err_neigh_init:
-	mlxsw_sp_lb_rif_fini(mlxsw_sp);
-err_lb_rif_init:
+	mlxsw_sp_lb_crif_fini(mlxsw_sp);
+err_lb_crif_init:
 	mlxsw_sp_vrs_fini(mlxsw_sp);
 err_vrs_init:
 	mlxsw_sp_mr_fini(mlxsw_sp);
@@ -10788,7 +10813,7 @@ void mlxsw_sp_router_fini(struct mlxsw_sp *mlxsw_sp)
 	unregister_inetaddr_notifier(&router->inetaddr_nb);
 	mlxsw_core_flush_owq();
 	mlxsw_sp_neigh_fini(mlxsw_sp);
-	mlxsw_sp_lb_rif_fini(mlxsw_sp);
+	mlxsw_sp_lb_crif_fini(mlxsw_sp);
 	mlxsw_sp_vrs_fini(mlxsw_sp);
 	mlxsw_sp_mr_fini(mlxsw_sp);
 	mlxsw_sp_lpm_fini(mlxsw_sp);
