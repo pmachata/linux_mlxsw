@@ -57,6 +57,7 @@ struct mlxsw_sp_crif_key {
 struct mlxsw_sp_crif {
 	struct mlxsw_sp_crif_key key;
 	struct rhash_head ht_node;
+	struct list_head nexthop_list;
 	struct mlxsw_sp_rif *rif;
 };
 
@@ -68,7 +69,6 @@ static const struct rhashtable_params mlxsw_sp_crif_ht_params = {
 
 struct mlxsw_sp_rif {
 	struct mlxsw_sp_crif *crif; /* NULL for underlay RIF */
-	struct list_head nexthop_list;
 	struct list_head neigh_list;
 	struct mlxsw_sp_fid *fid;
 	unsigned char addr[ETH_ALEN];
@@ -1086,6 +1086,7 @@ mlxsw_sp_crif_alloc(struct net_device *dev)
 		.dev = dev,
 	};
 
+	INIT_LIST_HEAD(&crif->nexthop_list);
 	crif->key = key;
 
 	return crif;
@@ -1708,17 +1709,18 @@ static void mlxsw_sp_netdevice_ipip_ol_down_event(struct mlxsw_sp *mlxsw_sp,
 		mlxsw_sp_ipip_entry_ol_down_event(mlxsw_sp, ipip_entry);
 }
 
-static void mlxsw_sp_nexthop_rif_migrate(struct mlxsw_sp *mlxsw_sp,
-					 struct mlxsw_sp_rif *old_rif,
-					 struct mlxsw_sp_rif *new_rif);
+static void mlxsw_sp_nexthop_rif_update(struct mlxsw_sp *mlxsw_sp,
+					struct mlxsw_sp_rif *rif);
+
 static int
 mlxsw_sp_ipip_entry_ol_lb_update(struct mlxsw_sp *mlxsw_sp,
 				 struct mlxsw_sp_ipip_entry *ipip_entry,
-				 bool keep_encap,
+				 bool keep_encap, // xxx drop me
 				 struct netlink_ext_ack *extack)
 {
 	struct mlxsw_sp_rif_ipip_lb *old_lb_rif = ipip_entry->ol_lb;
 	struct mlxsw_sp_rif_ipip_lb *new_lb_rif;
+	struct mlxsw_sp_crif *crif;
 
 	new_lb_rif = mlxsw_sp_ipip_ol_ipip_lb_create(mlxsw_sp,
 						     ipip_entry->ipipt,
@@ -1728,17 +1730,23 @@ mlxsw_sp_ipip_entry_ol_lb_update(struct mlxsw_sp *mlxsw_sp,
 		return PTR_ERR(new_lb_rif);
 	ipip_entry->ol_lb = new_lb_rif;
 
-	if (keep_encap)
-		mlxsw_sp_nexthop_rif_migrate(mlxsw_sp, &old_lb_rif->common,
-					     &new_lb_rif->common);
+	// XXX no need to migrate next hops, they are kept at CRIF, not RIF, and
+	// that stays intact. But we need to update the next hops to use the new
+	// RIF. Need to do this here before destroying the old RIF.
+	mlxsw_sp_nexthop_rif_update(mlxsw_sp, &new_lb_rif->common);
 
+	// XXX Now destroy the old RIF, which destroys the CRIF-RIF link. Using
+	// the same CRIF for another RIF is odd and something that should
+	// perhaps be warned on, so it's odd we so brazenly just walk right into
+	// this configuration. Looks like this needs some remodeling.
+	crif = old_lb_rif->common.crif;
 	mlxsw_sp_rif_destroy(&old_lb_rif->common);
+
+	new_lb_rif->common.crif = crif;
+	crif->rif = &new_lb_rif->common;
 
 	return 0;
 }
-
-static void mlxsw_sp_nexthop_rif_update(struct mlxsw_sp *mlxsw_sp,
-					struct mlxsw_sp_rif *rif);
 
 /**
  * __mlxsw_sp_ipip_entry_update_tunnel - Update offload related to IPIP entry.
@@ -2959,7 +2967,7 @@ struct mlxsw_sp_nexthop_key {
 
 struct mlxsw_sp_nexthop {
 	struct list_head neigh_list_node; /* member of neigh entry list */
-	struct list_head rif_list_node;
+	struct list_head crif_list_node;
 	struct list_head router_list_node;
 	struct mlxsw_sp_nexthop_group_info *nhgi; /* pointer back to the group
 						   * this nexthop belongs to
@@ -2972,7 +2980,7 @@ struct mlxsw_sp_nexthop {
 	int nh_weight;
 	int norm_nh_weight;
 	int num_adj_entries;
-	struct mlxsw_sp_rif *rif;
+	struct mlxsw_sp_crif *crif;
 	u8 should_offload:1, /* set indicates this nexthop should be written
 			      * to the adjacency table.
 			      */
@@ -2995,8 +3003,8 @@ struct mlxsw_sp_nexthop {
 static struct net_device *
 mlxsw_sp_nexthop_netdev(const struct mlxsw_sp_nexthop *nh)
 {
-	if (nh->rif)
-		return mlxsw_sp_rif_dev(nh->rif);
+	if (nh->crif) // xxx should this always hold?
+		return nh->crif->key.dev;
 	return NULL;
 }
 
@@ -3017,8 +3025,15 @@ struct mlxsw_sp_nexthop_group_info {
 	   is_resilient:1;
 	struct list_head list; /* member in nh_res_grp_list */
 	struct mlxsw_sp_nexthop nexthops[0];
-#define nh_rif	nexthops[0].rif
 };
+
+static struct mlxsw_sp_rif *
+mlxsw_sp_nhgi_rif(struct mlxsw_sp_nexthop_group_info *nhgi)
+{
+	struct mlxsw_sp_crif *crif = nhgi->nexthops[0].crif;
+
+	return crif ? crif->rif : NULL;
+}
 
 struct mlxsw_sp_nexthop_group_vr_key {
 	u16 vr_id;
@@ -3141,7 +3156,9 @@ int mlxsw_sp_nexthop_indexes(struct mlxsw_sp_nexthop *nh, u32 *p_adj_index,
 
 struct mlxsw_sp_rif *mlxsw_sp_nexthop_rif(struct mlxsw_sp_nexthop *nh)
 {
-	return nh->rif;
+	if (nh->crif) // xxx always holds?
+		return nh->crif->rif;
+	return NULL;
 }
 
 bool mlxsw_sp_nexthop_group_has_ipip(struct mlxsw_sp_nexthop *nh)
@@ -4148,23 +4165,23 @@ mlxsw_sp_nexthop_neigh_update(struct mlxsw_sp *mlxsw_sp,
 	}
 }
 
-static void mlxsw_sp_nexthop_rif_init(struct mlxsw_sp_nexthop *nh,
-				      struct mlxsw_sp_rif *rif)
+static void mlxsw_sp_nexthop_crif_init(struct mlxsw_sp_nexthop *nh,
+				       struct mlxsw_sp_crif *crif)
 {
-	if (nh->rif)
+	if (nh->crif)
 		return;
 
-	nh->rif = rif;
-	list_add(&nh->rif_list_node, &rif->nexthop_list);
+	nh->crif = crif;
+	list_add(&nh->crif_list_node, &crif->nexthop_list);
 }
 
-static void mlxsw_sp_nexthop_rif_fini(struct mlxsw_sp_nexthop *nh)
+static void mlxsw_sp_nexthop_crif_fini(struct mlxsw_sp_nexthop *nh)
 {
-	if (!nh->rif)
+	if (!nh->crif)
 		return;
 
-	list_del(&nh->rif_list_node);
-	nh->rif = NULL;
+	list_del(&nh->crif_list_node);
+	nh->crif = NULL;
 }
 
 static int mlxsw_sp_nexthop_neigh_init(struct mlxsw_sp *mlxsw_sp,
@@ -4266,15 +4283,21 @@ static void mlxsw_sp_nexthop_ipip_init(struct mlxsw_sp *mlxsw_sp,
 				       struct mlxsw_sp_nexthop *nh,
 				       struct mlxsw_sp_ipip_entry *ipip_entry)
 {
+	struct mlxsw_sp_crif *crif;
 	bool removing;
 
 	if (!nh->nhgi->gateway || nh->ipip_entry)
 		return;
 
+	// xxx do we hold the lock?
+	crif = mlxsw_sp_crif_lookup(mlxsw_sp->router, ipip_entry->ol_dev);
+	if (WARN_ON(!crif))
+		return;
+
 	nh->ipip_entry = ipip_entry;
 	removing = !mlxsw_sp_ipip_netdev_ul_up(ipip_entry->ol_dev);
 	__mlxsw_sp_nexthop_neigh_update(nh, removing);
-	mlxsw_sp_nexthop_rif_init(nh, &ipip_entry->ol_lb->common);
+	mlxsw_sp_nexthop_crif_init(nh, crif);
 }
 
 static void mlxsw_sp_nexthop_ipip_fini(struct mlxsw_sp *mlxsw_sp,
@@ -4302,11 +4325,11 @@ static bool mlxsw_sp_nexthop4_ipip_type(const struct mlxsw_sp *mlxsw_sp,
 
 static int mlxsw_sp_nexthop_type_init(struct mlxsw_sp *mlxsw_sp,
 				      struct mlxsw_sp_nexthop *nh,
-				      const struct net_device *dev)
+				      struct net_device *dev)
 {
 	const struct mlxsw_sp_ipip_ops *ipip_ops;
 	struct mlxsw_sp_ipip_entry *ipip_entry;
-	struct mlxsw_sp_rif *rif;
+	struct mlxsw_sp_crif *crif;
 	int err;
 
 	ipip_entry = mlxsw_sp_ipip_entry_find_by_ol_dev(mlxsw_sp, dev);
@@ -4320,11 +4343,11 @@ static int mlxsw_sp_nexthop_type_init(struct mlxsw_sp *mlxsw_sp,
 	}
 
 	nh->type = MLXSW_SP_NEXTHOP_TYPE_ETH;
-	rif = mlxsw_sp_rif_find_by_dev(mlxsw_sp, dev);
-	if (!rif)
+	crif = mlxsw_sp_crif_lookup(mlxsw_sp->router, dev);
+	if (!crif)
 		return 0;
 
-	mlxsw_sp_nexthop_rif_init(nh, rif);
+	mlxsw_sp_nexthop_crif_init(nh, crif);
 	err = mlxsw_sp_nexthop_neigh_init(mlxsw_sp, nh);
 	if (err)
 		goto err_neigh_init;
@@ -4332,7 +4355,7 @@ static int mlxsw_sp_nexthop_type_init(struct mlxsw_sp *mlxsw_sp,
 	return 0;
 
 err_neigh_init:
-	mlxsw_sp_nexthop_rif_fini(nh);
+	mlxsw_sp_nexthop_crif_fini(nh);
 	return err;
 }
 
@@ -4342,10 +4365,10 @@ static void mlxsw_sp_nexthop_type_fini(struct mlxsw_sp *mlxsw_sp,
 	switch (nh->type) {
 	case MLXSW_SP_NEXTHOP_TYPE_ETH:
 		mlxsw_sp_nexthop_neigh_fini(mlxsw_sp, nh);
-		mlxsw_sp_nexthop_rif_fini(nh);
+		mlxsw_sp_nexthop_crif_fini(nh);
 		break;
 	case MLXSW_SP_NEXTHOP_TYPE_IPIP:
-		mlxsw_sp_nexthop_rif_fini(nh);
+		mlxsw_sp_nexthop_crif_fini(nh);
 		mlxsw_sp_nexthop_ipip_fini(mlxsw_sp, nh);
 		break;
 	}
@@ -4441,7 +4464,7 @@ static void mlxsw_sp_nexthop_rif_update(struct mlxsw_sp *mlxsw_sp,
 	struct mlxsw_sp_nexthop *nh;
 	bool removing;
 
-	list_for_each_entry(nh, &rif->nexthop_list, rif_list_node) {
+	list_for_each_entry(nh, &rif->crif->nexthop_list, crif_list_node) {
 		switch (nh->type) {
 		case MLXSW_SP_NEXTHOP_TYPE_ETH:
 			removing = false;
@@ -4459,24 +4482,13 @@ static void mlxsw_sp_nexthop_rif_update(struct mlxsw_sp *mlxsw_sp,
 	}
 }
 
-static void mlxsw_sp_nexthop_rif_migrate(struct mlxsw_sp *mlxsw_sp,
-					 struct mlxsw_sp_rif *old_rif,
-					 struct mlxsw_sp_rif *new_rif)
-{
-	struct mlxsw_sp_nexthop *nh;
-
-	list_splice_init(&old_rif->nexthop_list, &new_rif->nexthop_list);
-	list_for_each_entry(nh, &new_rif->nexthop_list, rif_list_node)
-		nh->rif = new_rif;
-	mlxsw_sp_nexthop_rif_update(mlxsw_sp, new_rif);
-}
-
 static void mlxsw_sp_nexthop_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
 					   struct mlxsw_sp_rif *rif)
 {
 	struct mlxsw_sp_nexthop *nh, *tmp;
 
-	list_for_each_entry_safe(nh, tmp, &rif->nexthop_list, rif_list_node) {
+	list_for_each_entry_safe(nh, tmp, &rif->crif->nexthop_list,
+				 crif_list_node) {
 		mlxsw_sp_nexthop_type_fini(mlxsw_sp, nh);
 		mlxsw_sp_nexthop_group_refresh(mlxsw_sp, nh->nhgi->nh_grp);
 	}
@@ -4819,13 +4831,13 @@ static void mlxsw_sp_nexthop_obj_blackhole_init(struct mlxsw_sp *mlxsw_sp,
 	 * via an egress RIF, they still need to be programmed using a
 	 * valid RIF, so use the loopback RIF created during init.
 	 */
-	nh->rif = mlxsw_sp->router->lb_crif->rif;
+	nh->crif = mlxsw_sp->router->lb_crif;
 }
 
 static void mlxsw_sp_nexthop_obj_blackhole_fini(struct mlxsw_sp *mlxsw_sp,
 						struct mlxsw_sp_nexthop *nh)
 {
-	nh->rif = NULL;
+	nh->crif = NULL;
 	nh->should_offload = 0;
 }
 
@@ -5559,7 +5571,7 @@ mlxsw_sp_fib_entry_should_offload(const struct mlxsw_sp_fib_entry *fib_entry)
 	case MLXSW_SP_FIB_ENTRY_TYPE_REMOTE:
 		return !!nh_group->nhgi->adj_index_valid;
 	case MLXSW_SP_FIB_ENTRY_TYPE_LOCAL:
-		return !!nh_group->nhgi->nh_rif;
+		return !!mlxsw_sp_nhgi_rif(nh_group->nhgi);
 	case MLXSW_SP_FIB_ENTRY_TYPE_BLACKHOLE:
 	case MLXSW_SP_FIB_ENTRY_TYPE_IPIP_DECAP:
 	case MLXSW_SP_FIB_ENTRY_TYPE_NVE_DECAP:
@@ -5820,7 +5832,8 @@ static int mlxsw_sp_fib_entry_op_remote(struct mlxsw_sp *mlxsw_sp,
 		trap_action = MLXSW_REG_RALUE_TRAP_ACTION_NOP;
 		adjacency_index = nhgi->adj_index;
 		ecmp_size = nhgi->ecmp_size;
-	} else if (!nhgi->adj_index_valid && nhgi->count && nhgi->nh_rif) {
+	} else if (!nhgi->adj_index_valid && nhgi->count &&
+		   mlxsw_sp_nhgi_rif(nhgi)) {
 		trap_action = MLXSW_REG_RALUE_TRAP_ACTION_NOP;
 		adjacency_index = mlxsw_sp->router->adj_trap_index;
 		ecmp_size = 1;
@@ -5839,7 +5852,7 @@ static int mlxsw_sp_fib_entry_op_local(struct mlxsw_sp *mlxsw_sp,
 				       struct mlxsw_sp_fib_entry *fib_entry,
 				       enum mlxsw_reg_ralue_op op)
 {
-	struct mlxsw_sp_rif *rif = fib_entry->nh_group->nhgi->nh_rif;
+	struct mlxsw_sp_rif *rif = mlxsw_sp_nhgi_rif(fib_entry->nh_group->nhgi);
 	enum mlxsw_reg_ralue_trap_action trap_action;
 	char ralue_pl[MLXSW_REG_RALUE_LEN];
 	u16 trap_id = 0;
@@ -7924,7 +7937,6 @@ static struct mlxsw_sp_rif *mlxsw_sp_rif_alloc(size_t rif_size, u16 rif_index,
 	if (!rif)
 		return NULL;
 
-	INIT_LIST_HEAD(&rif->nexthop_list);
 	INIT_LIST_HEAD(&rif->neigh_list);
 	if (crif) {
 		struct net_device *l3_dev = crif->key.dev;
