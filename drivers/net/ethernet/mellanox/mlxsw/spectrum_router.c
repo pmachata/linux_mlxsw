@@ -58,6 +58,7 @@ struct mlxsw_sp_crif {
 	struct mlxsw_sp_crif_key key;
 	struct rhash_head ht_node;
 	struct list_head nexthop_list;
+	struct list_head neigh_list;
 	struct mlxsw_sp_rif *rif;
 };
 
@@ -69,7 +70,6 @@ static const struct rhashtable_params mlxsw_sp_crif_ht_params = {
 
 struct mlxsw_sp_rif {
 	struct mlxsw_sp_crif *crif; /* NULL for underlay RIF */
-	struct list_head neigh_list;
 	struct mlxsw_sp_fid *fid;
 	unsigned char addr[ETH_ALEN];
 	int mtu;
@@ -1087,6 +1087,7 @@ mlxsw_sp_crif_alloc(struct net_device *dev)
 	};
 
 	INIT_LIST_HEAD(&crif->nexthop_list);
+	INIT_LIST_HEAD(&crif->neigh_list);
 	crif->key = key;
 
 	return crif;
@@ -2156,10 +2157,10 @@ struct mlxsw_sp_neigh_key {
 };
 
 struct mlxsw_sp_neigh_entry {
-	struct list_head rif_list_node;
+	struct list_head crif_list_node;
 	struct rhash_head ht_node;
 	struct mlxsw_sp_neigh_key key;
-	u16 rif;
+	struct mlxsw_sp_crif *crif;
 	bool connected;
 	unsigned char ha[ETH_ALEN];
 	struct list_head nexthop_list; /* list of nexthops using
@@ -2176,21 +2177,28 @@ static const struct rhashtable_params mlxsw_sp_neigh_ht_params = {
 	.key_len = sizeof(struct mlxsw_sp_neigh_key),
 };
 
+static struct mlxsw_sp_neigh_entry *
+mlxsw_sp_crif_neigh_next(struct mlxsw_sp_crif *crif,
+			 struct mlxsw_sp_neigh_entry *neigh_entry)
+{
+	if (!neigh_entry) {
+		if (list_empty(&crif->neigh_list))
+			return NULL;
+		else
+			return list_first_entry(&crif->neigh_list,
+						typeof(*neigh_entry),
+						crif_list_node);
+	}
+	if (list_is_last(&neigh_entry->crif_list_node, &crif->neigh_list))
+		return NULL;
+	return list_next_entry(neigh_entry, crif_list_node);
+}
+
 struct mlxsw_sp_neigh_entry *
 mlxsw_sp_rif_neigh_next(struct mlxsw_sp_rif *rif,
 			struct mlxsw_sp_neigh_entry *neigh_entry)
 {
-	if (!neigh_entry) {
-		if (list_empty(&rif->neigh_list))
-			return NULL;
-		else
-			return list_first_entry(&rif->neigh_list,
-						typeof(*neigh_entry),
-						rif_list_node);
-	}
-	if (list_is_last(&neigh_entry->rif_list_node, &rif->neigh_list))
-		return NULL;
-	return list_next_entry(neigh_entry, rif_list_node);
+	return mlxsw_sp_crif_neigh_next(rif->crif, neigh_entry);
 }
 
 int mlxsw_sp_neigh_entry_type(struct mlxsw_sp_neigh_entry *neigh_entry)
@@ -2234,7 +2242,7 @@ int mlxsw_sp_neigh_counter_get(struct mlxsw_sp *mlxsw_sp,
 
 static struct mlxsw_sp_neigh_entry *
 mlxsw_sp_neigh_entry_alloc(struct mlxsw_sp *mlxsw_sp, struct neighbour *n,
-			   u16 rif)
+			   struct mlxsw_sp_crif *crif)
 {
 	struct mlxsw_sp_neigh_entry *neigh_entry;
 
@@ -2243,7 +2251,7 @@ mlxsw_sp_neigh_entry_alloc(struct mlxsw_sp *mlxsw_sp, struct neighbour *n,
 		return NULL;
 
 	neigh_entry->key.n = n;
-	neigh_entry->rif = rif;
+	neigh_entry->crif = crif;
 	INIT_LIST_HEAD(&neigh_entry->nexthop_list);
 
 	return neigh_entry;
@@ -2323,14 +2331,14 @@ static struct mlxsw_sp_neigh_entry *
 mlxsw_sp_neigh_entry_create(struct mlxsw_sp *mlxsw_sp, struct neighbour *n)
 {
 	struct mlxsw_sp_neigh_entry *neigh_entry;
-	struct mlxsw_sp_rif *rif;
+	struct mlxsw_sp_crif *crif;
 	int err;
 
-	rif = mlxsw_sp_rif_find_by_dev(mlxsw_sp, n->dev);
-	if (!rif)
+	crif = mlxsw_sp_crif_lookup(mlxsw_sp->router, n->dev);
+	if (!crif)
 		return ERR_PTR(-EINVAL);
 
-	neigh_entry = mlxsw_sp_neigh_entry_alloc(mlxsw_sp, n, rif->rif_index);
+	neigh_entry = mlxsw_sp_neigh_entry_alloc(mlxsw_sp, n, crif);
 	if (!neigh_entry)
 		return ERR_PTR(-ENOMEM);
 
@@ -2340,7 +2348,7 @@ mlxsw_sp_neigh_entry_create(struct mlxsw_sp *mlxsw_sp, struct neighbour *n)
 
 	mlxsw_sp_neigh_counter_alloc(mlxsw_sp, neigh_entry);
 	atomic_inc(&mlxsw_sp->router->neighs_update.neigh_count);
-	list_add(&neigh_entry->rif_list_node, &rif->neigh_list);
+	list_add(&neigh_entry->crif_list_node, &crif->neigh_list);
 
 	return neigh_entry;
 
@@ -2353,7 +2361,7 @@ static void
 mlxsw_sp_neigh_entry_destroy(struct mlxsw_sp *mlxsw_sp,
 			     struct mlxsw_sp_neigh_entry *neigh_entry)
 {
-	list_del(&neigh_entry->rif_list_node);
+	list_del(&neigh_entry->crif_list_node);
 	atomic_dec(&mlxsw_sp->router->neighs_update.neigh_count);
 	mlxsw_sp_neigh_counter_free(mlxsw_sp, neigh_entry);
 	mlxsw_sp_neigh_entry_remove(mlxsw_sp, neigh_entry);
@@ -2653,9 +2661,13 @@ mlxsw_sp_router_neigh_entry_op4(struct mlxsw_sp *mlxsw_sp,
 	struct neighbour *n = neigh_entry->key.n;
 	u32 dip = ntohl(*((__be32 *) n->primary_key));
 	char rauht_pl[MLXSW_REG_RAUHT_LEN];
+	u16 rif_index;
 
-	mlxsw_reg_rauht_pack4(rauht_pl, op, neigh_entry->rif, neigh_entry->ha,
-			      dip);
+	if (WARN_ON(!neigh_entry->crif->rif))
+		return -EINVAL;
+	rif_index = neigh_entry->crif->rif->rif_index;
+
+	mlxsw_reg_rauht_pack4(rauht_pl, op, rif_index, neigh_entry->ha, dip);
 	if (neigh_entry->counter_valid)
 		mlxsw_reg_rauht_pack_counter(rauht_pl,
 					     neigh_entry->counter_index);
@@ -2670,9 +2682,13 @@ mlxsw_sp_router_neigh_entry_op6(struct mlxsw_sp *mlxsw_sp,
 	struct neighbour *n = neigh_entry->key.n;
 	char rauht_pl[MLXSW_REG_RAUHT_LEN];
 	const char *dip = n->primary_key;
+	u16 rif_index;
 
-	mlxsw_reg_rauht_pack6(rauht_pl, op, neigh_entry->rif, neigh_entry->ha,
-			      dip);
+	if (WARN_ON(!neigh_entry->crif->rif))
+		return -EINVAL;
+	rif_index = neigh_entry->crif->rif->rif_index;
+
+	mlxsw_reg_rauht_pack6(rauht_pl, op, rif_index, neigh_entry->ha, dip);
 	if (neigh_entry->counter_valid)
 		mlxsw_reg_rauht_pack_counter(rauht_pl,
 					     neigh_entry->counter_index);
@@ -2940,8 +2956,8 @@ static void mlxsw_sp_neigh_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
 {
 	struct mlxsw_sp_neigh_entry *neigh_entry, *tmp;
 
-	list_for_each_entry_safe(neigh_entry, tmp, &rif->neigh_list,
-				 rif_list_node) {
+	list_for_each_entry_safe(neigh_entry, tmp, &rif->crif->neigh_list,
+				 crif_list_node) {
 		mlxsw_sp_neigh_entry_update(mlxsw_sp, neigh_entry, false);
 		mlxsw_sp_neigh_entry_destroy(mlxsw_sp, neigh_entry);
 	}
@@ -7937,7 +7953,6 @@ static struct mlxsw_sp_rif *mlxsw_sp_rif_alloc(size_t rif_size, u16 rif_index,
 	if (!rif)
 		return NULL;
 
-	INIT_LIST_HEAD(&rif->neigh_list);
 	if (crif) {
 		struct net_device *l3_dev = crif->key.dev;
 
