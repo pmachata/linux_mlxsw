@@ -1491,6 +1491,7 @@ mlxsw_sp_br_ban_rif_pvid_change(struct mlxsw_sp *mlxsw_sp,
 
 	if (vlan->flags & BRIDGE_VLAN_INFO_PVID) {
 		if (vlan->vid != pvid) {
+			// xxx perhaps now we'll have tools to update it?
 			netdev_err(br_dev, "Can't change PVID, it's used by router interface\n");
 			return -EBUSY;
 		}

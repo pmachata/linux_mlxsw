@@ -2307,6 +2307,11 @@ static void
 mlxsw_sp_neigh_counter_alloc(struct mlxsw_sp *mlxsw_sp,
 			     struct mlxsw_sp_neigh_entry *neigh_entry)
 {
+	if (WARN_ON(!neigh_entry->crif->rif))
+		// xxx consider splitting neighbor entries to cneighs and
+		// rneighs, along the lines of CRIFs and RIFs
+		return;
+
 	if (!mlxsw_sp_neigh_counter_should_alloc(mlxsw_sp, neigh_entry))
 		return;
 
@@ -2320,6 +2325,10 @@ static void
 mlxsw_sp_neigh_counter_free(struct mlxsw_sp *mlxsw_sp,
 			    struct mlxsw_sp_neigh_entry *neigh_entry)
 {
+	if (WARN_ON(!neigh_entry->crif->rif))
+		// xxx consider splitting neighbor entries to cneighs and
+		// rneighs, along the lines of CRIFs and RIFs
+		return;
 	if (!neigh_entry->counter_valid)
 		return;
 	mlxsw_sp_flow_counter_free(mlxsw_sp,
@@ -2346,10 +2355,14 @@ mlxsw_sp_neigh_entry_create(struct mlxsw_sp *mlxsw_sp, struct neighbour *n)
 	if (err)
 		goto err_neigh_entry_insert;
 
-	mlxsw_sp_neigh_counter_alloc(mlxsw_sp, neigh_entry);
-	atomic_inc(&mlxsw_sp->router->neighs_update.neigh_count);
+	if (crif->rif) {
+		mlxsw_sp_neigh_counter_alloc(mlxsw_sp, neigh_entry);
+		atomic_inc(&mlxsw_sp->router->neighs_update.neigh_count);
+	}
 	list_add(&neigh_entry->crif_list_node, &crif->neigh_list);
 
+	printk(KERN_WARNING "neigh_create %s %pM\n",
+	       n->dev->name, n->ha);
 	return neigh_entry;
 
 err_neigh_entry_insert:
@@ -2361,9 +2374,16 @@ static void
 mlxsw_sp_neigh_entry_destroy(struct mlxsw_sp *mlxsw_sp,
 			     struct mlxsw_sp_neigh_entry *neigh_entry)
 {
+	printk(KERN_WARNING "neigh_destroy %s %pM\n",
+	       neigh_entry->crif->key.dev->name, neigh_entry->ha);
 	list_del(&neigh_entry->crif_list_node);
-	atomic_dec(&mlxsw_sp->router->neighs_update.neigh_count);
-	mlxsw_sp_neigh_counter_free(mlxsw_sp, neigh_entry);
+
+	WARN_ON(!!neigh_entry->crif->rif && neigh_entry->counter_valid);
+	if (neigh_entry->crif->rif) {
+		atomic_dec(&mlxsw_sp->router->neighs_update.neigh_count);
+		mlxsw_sp_neigh_counter_free(mlxsw_sp, neigh_entry);
+	}
+
 	mlxsw_sp_neigh_entry_remove(mlxsw_sp, neigh_entry);
 	mlxsw_sp_neigh_entry_free(neigh_entry);
 }
@@ -2800,6 +2820,7 @@ static void mlxsw_sp_router_neigh_event_work(struct work_struct *work)
 		goto out;
 
 	memcpy(neigh_entry->ha, ha, ETH_ALEN);
+	// xxx this then calls neigh OP without RIF
 	mlxsw_sp_neigh_entry_update(mlxsw_sp, neigh_entry, entry_connected);
 	mlxsw_sp_nexthop_neigh_update(mlxsw_sp, neigh_entry, !entry_connected,
 				      dead);
@@ -2949,6 +2970,24 @@ static void mlxsw_sp_neigh_fini(struct mlxsw_sp *mlxsw_sp)
 	cancel_delayed_work_sync(&mlxsw_sp->router->neighs_update.dw);
 	cancel_delayed_work_sync(&mlxsw_sp->router->nexthop_probe_dw);
 	rhashtable_destroy(&mlxsw_sp->router->neigh_ht);
+}
+
+static int mlxsw_sp_neigh_rif_made_sync(struct mlxsw_sp *mlxsw_sp,
+					struct mlxsw_sp_rif *rif)
+{
+	struct mlxsw_sp_neigh_entry *neigh_entry, *tmp;
+
+	list_for_each_entry_safe(neigh_entry, tmp, &rif->crif->neigh_list,
+				 crif_list_node) {
+		printk(KERN_WARNING "neigh: RIF made (%s) xxx\n",
+		       mlxsw_sp_rif_dev(rif)->name);
+		/*
+		mlxsw_sp_neigh_entry_update(mlxsw_sp, neigh_entry, true);
+		mlxsw_sp_neigh_entry_destroy(mlxsw_sp, neigh_entry);
+		*/
+	}
+
+	return 0;
 }
 
 static void mlxsw_sp_neigh_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
@@ -4120,6 +4159,8 @@ mlxsw_sp_nexthop_dead_neigh_replace(struct mlxsw_sp *mlxsw_sp,
 		n = neigh_create(nh->neigh_tbl, &nh->gw_addr, dev);
 		if (IS_ERR(n))
 			return PTR_ERR(n);
+		// xxx we don't need to keep the neighbor up to date if it's not
+		// offloaded
 		neigh_event_send(n, NULL);
 	}
 
@@ -4209,6 +4250,14 @@ static int mlxsw_sp_nexthop_neigh_init(struct mlxsw_sp *mlxsw_sp,
 	u8 nud_state, dead;
 	int err;
 
+	if (WARN_ON(!nh->crif->rif))
+		/* We should not create neighbors, therefore entries, therefore
+		 * keep the entries on a NH neighs list, if there's no RIF.
+		 * Otherwise the kernel would end up managing random garbage
+		 * just because the netdevice is "interesting" to us.
+		 */
+		return 0;
+
 	if (!nh->nhgi->gateway || nh->neigh_entry)
 		return 0;
 	dev = mlxsw_sp_nexthop_netdev(nh);
@@ -4263,6 +4312,9 @@ static void mlxsw_sp_nexthop_neigh_fini(struct mlxsw_sp *mlxsw_sp,
 	struct neighbour *n;
 
 	if (!neigh_entry)
+		return;
+	if (WARN_ON(!nh->crif->rif))
+		/* Nothing done on init, therefore nothing to do on fini. */
 		return;
 	n = neigh_entry->key.n;
 
@@ -4364,9 +4416,12 @@ static int mlxsw_sp_nexthop_type_init(struct mlxsw_sp *mlxsw_sp,
 		return 0;
 
 	mlxsw_sp_nexthop_crif_init(nh, crif);
-	err = mlxsw_sp_nexthop_neigh_init(mlxsw_sp, nh);
-	if (err)
-		goto err_neigh_init;
+
+	if (crif->rif) {
+		err = mlxsw_sp_nexthop_neigh_init(mlxsw_sp, nh);
+		if (err)
+			goto err_neigh_init;
+	}
 
 	return 0;
 
@@ -4375,9 +4430,27 @@ err_neigh_init:
 	return err;
 }
 
+static int mlxsw_sp_nexthop_type_rif_made(struct mlxsw_sp *mlxsw_sp,
+					  struct mlxsw_sp_nexthop *nh)
+{
+	printk(KERN_WARNING "nexthop: RIF made (%s)\n",
+	       mlxsw_sp_nexthop_netdev(nh)->name);
+
+	switch (nh->type) {
+	case MLXSW_SP_NEXTHOP_TYPE_ETH:
+		return mlxsw_sp_nexthop_neigh_init(mlxsw_sp, nh);
+	case MLXSW_SP_NEXTHOP_TYPE_IPIP:
+		break;
+	}
+
+	return 0;
+}
+
 static void mlxsw_sp_nexthop_type_rif_gone(struct mlxsw_sp *mlxsw_sp,
 					   struct mlxsw_sp_nexthop *nh)
 {
+	printk(KERN_WARNING "nexthop: RIF gone\n");
+
 	switch (nh->type) {
 	case MLXSW_SP_NEXTHOP_TYPE_ETH:
 		mlxsw_sp_nexthop_neigh_fini(mlxsw_sp, nh);
@@ -4511,6 +4584,35 @@ static void mlxsw_sp_nexthop_rif_update(struct mlxsw_sp *mlxsw_sp,
 	}
 }
 
+static int mlxsw_sp_nexthop_rif_made_sync(struct mlxsw_sp *mlxsw_sp,
+					  struct mlxsw_sp_rif *rif)
+{
+	struct mlxsw_sp_nexthop *nh, *tmp;
+	unsigned int n = 0;
+	int err;
+
+	list_for_each_entry_safe(nh, tmp, &rif->crif->nexthop_list,
+				 crif_list_node) {
+		err = mlxsw_sp_nexthop_type_rif_made(mlxsw_sp, nh);
+		if (err)
+			goto err_nexthop_type_rif;
+		mlxsw_sp_nexthop_group_refresh(mlxsw_sp, nh->nhgi->nh_grp);
+		n++;
+	}
+
+	return 0;
+
+err_nexthop_type_rif:
+	list_for_each_entry_safe(nh, tmp, &rif->crif->nexthop_list,
+				 crif_list_node) {
+		if (!n--)
+			break;
+		mlxsw_sp_nexthop_type_rif_gone(mlxsw_sp, nh);
+		mlxsw_sp_nexthop_group_refresh(mlxsw_sp, nh->nhgi->nh_grp);
+	}
+	return err;
+}
+
 static void mlxsw_sp_nexthop_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
 					   struct mlxsw_sp_rif *rif)
 {
@@ -4518,7 +4620,7 @@ static void mlxsw_sp_nexthop_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
 
 	list_for_each_entry_safe(nh, tmp, &rif->crif->nexthop_list,
 				 crif_list_node) {
-		mlxsw_sp_nexthop_type_fini(mlxsw_sp, nh);
+		mlxsw_sp_nexthop_type_rif_gone(mlxsw_sp, nh);
 		mlxsw_sp_nexthop_group_refresh(mlxsw_sp, nh->nhgi->nh_grp);
 	}
 }
@@ -7869,6 +7971,26 @@ static int mlxsw_sp_router_rif_disable(struct mlxsw_sp *mlxsw_sp, u16 rif)
 	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(ritr), ritr_pl);
 }
 
+static int mlxsw_sp_router_rif_made_sync(struct mlxsw_sp *mlxsw_sp,
+					 struct mlxsw_sp_rif *rif)
+{
+	int err;
+
+	err = mlxsw_sp_neigh_rif_made_sync(mlxsw_sp, rif);
+	if (err)
+		return err;
+
+	err = mlxsw_sp_nexthop_rif_made_sync(mlxsw_sp, rif);
+	if (err)
+		goto err_nexthop;
+
+	return 0;
+
+err_nexthop:
+	mlxsw_sp_neigh_rif_gone_sync(mlxsw_sp, rif);
+	return err;
+}
+
 static void mlxsw_sp_router_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
 					  struct mlxsw_sp_rif *rif)
 {
@@ -8272,6 +8394,10 @@ mlxsw_sp_rif_create(struct mlxsw_sp *mlxsw_sp,
 			goto err_mr_rif_add;
 	}
 
+	err = mlxsw_sp_router_rif_made_sync(mlxsw_sp, rif);
+	if (err)
+		goto err_rif_made_sync;
+
 	if (netdev_offload_xstats_enabled(params->dev,
 					  NETDEV_OFFLOAD_XSTATS_TYPE_L3)) {
 		err = mlxsw_sp_router_port_l3_stats_enable(rif);
@@ -8286,6 +8412,8 @@ mlxsw_sp_rif_create(struct mlxsw_sp *mlxsw_sp,
 	return rif;
 
 err_stats_enable:
+	mlxsw_sp_router_rif_gone_sync(mlxsw_sp, rif);
+err_rif_made_sync:
 err_mr_rif_add:
 	for (i--; i >= 0; i--)
 		mlxsw_sp_mr_rif_del(vr->mr_table[i], rif);
@@ -9433,6 +9561,65 @@ mlxsw_sp_netdevice_vrf_event(struct net_device *l3_dev, unsigned long event,
 	return err;
 }
 
+static bool mlxsw_sp_is_enslavement_event(unsigned long event, void *ptr)
+{
+	struct netdev_notifier_changeupper_info *info = ptr;
+
+	if (event != NETDEV_CHANGEUPPER)
+		return false;
+	// xxx include LAG as well?
+	return netif_is_bridge_master(info->upper_dev);
+}
+
+static int
+mlxsw_sp_netdevice_enslavement_event(struct mlxsw_sp *mlxsw_sp,
+				     struct net_device *dev,
+				     struct netdev_notifier_changeupper_info *info)
+{
+	struct netlink_ext_ack *extack;
+	struct net_device *upper_dev;
+	struct mlxsw_sp_crif *crif;
+	bool addr_list_empty;
+
+	extack = netdev_notifier_info_to_extack(&info->info);
+	upper_dev = info->upper_dev;
+	addr_list_empty = mlxsw_sp_dev_addr_list_empty(upper_dev);
+
+	crif = mlxsw_sp_crif_lookup(mlxsw_sp->router, upper_dev);
+	if (WARN_ON(!crif))
+		return -EINVAL;
+
+	// xxx this needs to walk uppers as well. Enslaving to a LAG can cause
+	// creation of a RIF on its master bridge, and on that bridge's VLAN.
+
+	if (info->linking && !addr_list_empty && !crif->rif) {
+		struct mlxsw_sp_rif_params params = {
+			.dev = upper_dev,
+		};
+		struct mlxsw_sp_rif *rif;
+
+		// xxx this needs to perform validations that would previously
+		// be done on address addition. Currently mlxsw forbids adding
+		// an address to a 802.1ad bridge, but does not forbid
+		// enslavement of ports to an 802.1ad bridge with an address.
+		// Previously this was OKish, because everything was supposed to
+		// be done bottom up. But now we need to avoid creating a RIF on
+		// an 802.1ad bridge.
+
+		printk(KERN_WARNING "creating RIF for %s\n", upper_dev->name);
+		rif = mlxsw_sp_rif_create(mlxsw_sp, &params, extack);
+		if (IS_ERR(rif))
+			return PTR_ERR(rif);
+	} else if (!info->linking && crif->rif) {
+		// xxx wait, how is this currently not handled? The last port to
+		// leave the bridge should cause RIF removal even now...?
+
+		// xxx +if (this was the last port)
+	}
+
+	return 0;
+}
+
 static int mlxsw_sp_router_netdevice_event(struct notifier_block *nb,
 					   unsigned long event, void *ptr)
 {
@@ -9465,6 +9652,8 @@ static int mlxsw_sp_router_netdevice_event(struct notifier_block *nb,
 		err = mlxsw_sp_netdevice_router_port_event(dev, event, ptr);
 	else if (mlxsw_sp_is_vrf_event(event, ptr))
 		err = mlxsw_sp_netdevice_vrf_event(dev, event, ptr);
+	else if (mlxsw_sp_is_enslavement_event(event, ptr))
+		err = mlxsw_sp_netdevice_enslavement_event(mlxsw_sp, dev, ptr);
 
 	if (event == NETDEV_UNREGISTER)
 		mlxsw_sp_netdevice_unregister(router, dev);
@@ -10045,7 +10234,7 @@ mlxsw_sp_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 tb_id,
 		return ERR_CAST(vr);
 
 	if (refcount_inc_not_zero(&vr->ul_rif_refcnt)) {
-		WARN_ON(vr->ul_rif->crif != crif);
+		WARN_ON(vr->ul_rif->crif != crif); // xxx xyz
 		return vr->ul_rif;
 	}
 
