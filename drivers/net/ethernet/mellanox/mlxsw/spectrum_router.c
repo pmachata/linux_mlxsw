@@ -4375,12 +4375,25 @@ err_neigh_init:
 	return err;
 }
 
-static void mlxsw_sp_nexthop_type_fini(struct mlxsw_sp *mlxsw_sp,
-				       struct mlxsw_sp_nexthop *nh)
+static void mlxsw_sp_nexthop_type_rif_gone(struct mlxsw_sp *mlxsw_sp,
+					   struct mlxsw_sp_nexthop *nh)
 {
 	switch (nh->type) {
 	case MLXSW_SP_NEXTHOP_TYPE_ETH:
 		mlxsw_sp_nexthop_neigh_fini(mlxsw_sp, nh);
+		break;
+	case MLXSW_SP_NEXTHOP_TYPE_IPIP:
+		break;
+	}
+}
+
+static void mlxsw_sp_nexthop_type_fini(struct mlxsw_sp *mlxsw_sp,
+				       struct mlxsw_sp_nexthop *nh)
+{
+	mlxsw_sp_nexthop_type_rif_gone(mlxsw_sp, nh);
+
+	switch (nh->type) {
+	case MLXSW_SP_NEXTHOP_TYPE_ETH:
 		mlxsw_sp_nexthop_crif_fini(nh);
 		break;
 	case MLXSW_SP_NEXTHOP_TYPE_IPIP:
