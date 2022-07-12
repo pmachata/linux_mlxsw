@@ -7864,28 +7864,37 @@ static void mlxsw_sp_router_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
 	mlxsw_sp_neigh_rif_gone_sync(mlxsw_sp, rif);
 }
 
-static bool
-mlxsw_sp_rif_should_config(struct mlxsw_sp_rif *rif, struct net_device *dev,
-			   unsigned long event)
+static bool mlxsw_sp_dev_addr_list_empty(struct net_device *dev)
 {
 	struct inet6_dev *inet6_dev;
 	bool addr_list_empty = true;
 	struct in_device *idev;
 
+	rcu_read_lock();
+	idev = __in_dev_get_rcu(dev);
+	if (idev && idev->ifa_list)
+		addr_list_empty = false;
+
+	inet6_dev = __in6_dev_get(dev);
+	if (addr_list_empty && inet6_dev &&
+	    !list_empty(&inet6_dev->addr_list))
+		addr_list_empty = false;
+	rcu_read_unlock();
+
+	return addr_list_empty;
+}
+
+static bool
+mlxsw_sp_rif_should_config(struct mlxsw_sp_rif *rif, struct net_device *dev,
+			   unsigned long event)
+{
+	bool addr_list_empty = true;
+
 	switch (event) {
 	case NETDEV_UP:
 		return rif == NULL;
 	case NETDEV_DOWN:
-		rcu_read_lock();
-		idev = __in_dev_get_rcu(dev);
-		if (idev && idev->ifa_list)
-			addr_list_empty = false;
-
-		inet6_dev = __in6_dev_get(dev);
-		if (addr_list_empty && inet6_dev &&
-		    !list_empty(&inet6_dev->addr_list))
-			addr_list_empty = false;
-		rcu_read_unlock();
+		addr_list_empty = mlxsw_sp_dev_addr_list_empty(dev);
 
 		/* macvlans do not have a RIF, but rather piggy back on the
 		 * RIF of their lower device.
