@@ -62,6 +62,7 @@ TEST_PROGS = bridge_igmp.sh \
 	q_in_vni.sh \
 	router_bridge.sh \
 	router_bridge_vlan.sh \
+	router_bridge_vlan_upper.sh \
 	router_broadcast.sh \
 	router_mpath_nh_res.sh \
 	router_mpath_nh.sh \
