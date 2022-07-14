@@ -4542,6 +4542,47 @@ static bool mlxsw_sp_bridge_vxlan_is_valid(struct net_device *br_dev,
 	return true;
 }
 
+static bool mlxsw_sp_netdev_is_master(struct net_device *upper_dev,
+				      struct net_device *dev)
+{
+	return upper_dev == netdev_master_upper_dev_get(dev);
+}
+
+static int mlxsw_sp_router_validate_uppers(struct mlxsw_sp *mlxsw_sp,
+					   struct net_device *dev,
+					   struct netlink_ext_ack *extack)
+{
+	struct net_device *upper_dev;
+	struct list_head *iter;
+	int err;
+
+	netdev_for_each_upper_dev_rcu(dev, upper_dev, iter) {
+		struct netdev_notifier_changeupper_info info = {
+			.info = {
+				.dev = dev,
+				.extack = extack,
+			},
+			.upper_dev = upper_dev,
+			.master = mlxsw_sp_netdev_is_master(upper_dev, dev),
+			.linking = true,
+			// xxx upper_info is only relevant for LAG, I think we
+			// can arrange things so that we don't depend on it.
+			.upper_info = NULL,
+		};
+
+		printk(KERN_WARNING "validating %s's upper %s\n", dev->name,
+		       upper_dev->name);
+		err = mlxsw_sp_netdevice_event(&mlxsw_sp->netdevice_nb,
+					       NETDEV_PRECHANGEUPPER, &info);
+		if (err)
+			return err;
+
+		// xxx recurse
+	}
+
+	return 0;
+}
+
 static int mlxsw_sp_netdevice_port_upper_event(struct net_device *lower_dev,
 					       struct net_device *dev,
 					       unsigned long event, void *ptr)
@@ -4582,8 +4623,11 @@ static int mlxsw_sp_netdevice_port_upper_event(struct net_device *lower_dev,
 		    (!netif_is_bridge_master(upper_dev) ||
 		     !mlxsw_sp_bridge_device_is_offloaded(mlxsw_sp,
 							  upper_dev))) {
-			NL_SET_ERR_MSG_MOD(extack, "Enslaving a port to a device that already has an upper device is not supported");
-			return -EINVAL;
+			err = mlxsw_sp_router_validate_uppers(mlxsw_sp,
+							      upper_dev,
+							      extack);
+			if (err)
+				return err;
 		}
 		if (netif_is_lag_master(upper_dev) &&
 		    !mlxsw_sp_master_lag_check(mlxsw_sp, upper_dev,
@@ -4782,13 +4826,6 @@ static int mlxsw_sp_netdevice_port_vlan_event(struct net_device *vlan_dev,
 		    mlxsw_sp_bridge_has_vxlan(upper_dev) &&
 		    !mlxsw_sp_bridge_vxlan_is_valid(upper_dev, extack))
 			return -EOPNOTSUPP;
-		if (netdev_has_any_upper_dev(upper_dev) &&
-		    (!netif_is_bridge_master(upper_dev) ||
-		     !mlxsw_sp_bridge_device_is_offloaded(mlxsw_sp,
-							  upper_dev))) {
-			NL_SET_ERR_MSG_MOD(extack, "Enslaving a port to a device that already has an upper device is not supported");
-			return -EINVAL;
-		}
 		if (netif_is_macvlan(upper_dev) &&
 		    !mlxsw_sp_rif_exists(mlxsw_sp, vlan_dev)) {
 			NL_SET_ERR_MSG_MOD(extack, "macvlan is only supported on top of router interfaces");
@@ -5049,8 +5086,8 @@ static int mlxsw_sp_netdevice_vxlan_event(struct mlxsw_sp *mlxsw_sp,
 	return 0;
 }
 
-static int mlxsw_sp_netdevice_event(struct notifier_block *nb,
-				    unsigned long event, void *ptr)
+int mlxsw_sp_netdevice_event(struct notifier_block *nb,
+			     unsigned long event, void *ptr)
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct mlxsw_sp_span_entry *span_entry;
