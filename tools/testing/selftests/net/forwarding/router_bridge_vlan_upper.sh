@@ -148,12 +148,14 @@ respin_config()
 
 	ip link set dev $swp2 nomaster
 	ip link set dev $swp1 nomaster
+
 	sleep 2
+
 	ip link set dev $swp1 master br1
 	ip link set dev $swp2 master br1
-	sleep 1
-	ip ro sh
-	read -p Ready.
+
+	bridge vlan add dev $swp1 vid 555
+	bridge vlan add dev $swp2 vid 777
 }
 
 trap cleanup EXIT

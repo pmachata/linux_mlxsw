@@ -4548,39 +4548,167 @@ static bool mlxsw_sp_netdev_is_master(struct net_device *upper_dev,
 	return upper_dev == netdev_master_upper_dev_get(dev);
 }
 
-static int mlxsw_sp_router_validate_uppers(struct mlxsw_sp *mlxsw_sp,
-					   struct net_device *dev,
-					   struct netlink_ext_ack *extack)
+static int __mlxsw_sp_netdevice_event(struct mlxsw_sp *mlxsw_sp,
+				      unsigned long event, void *ptr,
+				      bool process_foreign);
+static int mlxsw_sp_netdevice_replay(struct mlxsw_sp *mlxsw_sp,
+				     struct net_device *dev,
+				     unsigned long event,
+				     bool linking,
+				     struct netlink_ext_ack *extack);
+
+static void
+mlxsw_sp_netdevice_fabricate_changeupper_info(struct netdev_notifier_changeupper_info *info,
+					      struct net_device *dev,
+					      struct net_device *upper_dev,
+					      bool linking,
+					      struct netlink_ext_ack *extack)
 {
+	*info = (struct netdev_notifier_changeupper_info) {
+		.info = {
+			.dev = dev,
+			.extack = extack,
+		},
+		.upper_dev = upper_dev,
+		.master = mlxsw_sp_netdev_is_master(upper_dev, dev),
+		.linking = linking,
+
+		/* upper_info is relevant for LAG devices, so it looks
+		 * like we need to fabricate one. But actually we only
+		 * needed this if LAG were a valid upper above another
+		 * upper (e.g. a bridge that is a member of a LAG), and
+		 * it never is. So we can keep this as NULL.
+		 */
+		.upper_info = NULL,
+	};
+}
+
+static int mlxsw_sp_netdevice_replay_immediate(struct mlxsw_sp *mlxsw_sp,
+					       struct net_device *dev,
+					       unsigned long event,
+					       bool linking,
+					       struct net_device *until,
+					       struct netlink_ext_ack *extack)
+{
+	struct net_device *last_upper = NULL;
+	struct net_device *upper_dev;
+	struct list_head *iter;
+	int err;
+
+	printk(KERN_WARNING "replaying %ld on %s's uppers linking %d\n",
+	       event, dev->name, linking);
+
+	netdev_for_each_upper_dev_rcu(dev, upper_dev, iter) {
+		struct netdev_notifier_changeupper_info info;
+
+		mlxsw_sp_netdevice_fabricate_changeupper_info(&info, dev,
+							      upper_dev, linking,
+							      extack);
+
+		printk(KERN_WARNING "invoke %ld on %s's upper %s linking %d\n",
+		       event, dev->name, upper_dev->name, linking);
+		err = __mlxsw_sp_netdevice_event(mlxsw_sp, event, &info, true);
+		if (err && linking)
+			goto err_netdevice_event;
+
+		if (upper_dev == until)
+			break;
+
+		last_upper = upper_dev;
+	}
+
+	return 0;
+
+err_netdevice_event:
+	if (event == NETDEV_PRECHANGEUPPER)
+		/* No need to roll back. */
+		return err;
+
+	mlxsw_sp_netdevice_replay_immediate(mlxsw_sp, dev, event, false,
+					    last_upper, extack);
+	return err;
+}
+
+static int mlxsw_sp_netdevice_replay_recurse(struct mlxsw_sp *mlxsw_sp,
+					     struct net_device *dev,
+					     unsigned long event,
+					     bool linking,
+					     struct net_device *until,
+					     struct netlink_ext_ack *extack)
+{
+	struct net_device *last_upper = NULL;
 	struct net_device *upper_dev;
 	struct list_head *iter;
 	int err;
 
 	netdev_for_each_upper_dev_rcu(dev, upper_dev, iter) {
-		struct netdev_notifier_changeupper_info info = {
-			.info = {
-				.dev = dev,
-				.extack = extack,
-			},
-			.upper_dev = upper_dev,
-			.master = mlxsw_sp_netdev_is_master(upper_dev, dev),
-			.linking = true,
-			// xxx upper_info is only relevant for LAG, I think we
-			// can arrange things so that we don't depend on it.
-			.upper_info = NULL,
-		};
+		err = mlxsw_sp_netdevice_replay(mlxsw_sp, upper_dev, event,
+						linking, extack);
+		if (err && linking)
+			goto err_netdevice_event;
 
-		printk(KERN_WARNING "validating %s's upper %s\n", dev->name,
-		       upper_dev->name);
-		err = mlxsw_sp_netdevice_event(&mlxsw_sp->netdevice_nb,
-					       NETDEV_PRECHANGEUPPER, &info);
-		if (err)
-			return err;
+		if (upper_dev == until)
+			break;
 
-		// xxx recurse
+		last_upper = upper_dev;
 	}
 
 	return 0;
+
+err_netdevice_event:
+	if (event == NETDEV_PRECHANGEUPPER)
+		/* No need to roll back. */
+		return err;
+
+	mlxsw_sp_netdevice_replay_recurse(mlxsw_sp, dev, event, false,
+					  last_upper, extack);
+	return err;
+}
+
+static int mlxsw_sp_netdevice_replay(struct mlxsw_sp *mlxsw_sp,
+				     struct net_device *dev,
+				     unsigned long event,
+				     bool linking,
+				     struct netlink_ext_ack *extack)
+{
+	int err;
+
+	err = mlxsw_sp_netdevice_replay_immediate(mlxsw_sp, dev, event, linking,
+						  NULL, extack);
+	if (err)
+		return err;
+
+	err = mlxsw_sp_netdevice_replay_recurse(mlxsw_sp, dev, event, linking,
+						NULL, extack);
+	if (err && linking)
+		goto err_recurse;
+
+	return 0;
+
+err_recurse:
+	if (event == NETDEV_PRECHANGEUPPER)
+		/* No need to roll back. */
+		return err;
+
+	mlxsw_sp_netdevice_replay_immediate(mlxsw_sp, dev, event, false, NULL,
+					    extack);
+	return err;
+}
+
+static int mlxsw_sp_netdevice_validate_uppers(struct mlxsw_sp *mlxsw_sp,
+					      struct net_device *dev,
+					      struct netlink_ext_ack *extack)
+{
+	return mlxsw_sp_netdevice_replay(mlxsw_sp, dev, NETDEV_PRECHANGEUPPER,
+					 true, extack);
+}
+
+static int mlxsw_sp_netdevice_replay_changeupper(struct mlxsw_sp *mlxsw_sp,
+						 struct net_device *dev,
+						 struct netlink_ext_ack *extack)
+{
+	return mlxsw_sp_netdevice_replay(mlxsw_sp, dev, NETDEV_CHANGEUPPER,
+					 true, extack);
 }
 
 static int mlxsw_sp_netdevice_port_upper_event(struct net_device *lower_dev,
@@ -4609,7 +4737,7 @@ static int mlxsw_sp_netdevice_port_upper_event(struct net_device *lower_dev,
 		    !netif_is_ovs_master(upper_dev) &&
 		    !netif_is_macvlan(upper_dev) &&
 		    !netif_is_l3_master(upper_dev)) {
-			NL_SET_ERR_MSG_MOD(extack, "Unknown upper device type");
+			NL_SET_ERR_MSG_MOD(extack, "port Unknown upper device type");
 			return -EINVAL;
 		}
 		if (!info->linking)
@@ -4623,9 +4751,9 @@ static int mlxsw_sp_netdevice_port_upper_event(struct net_device *lower_dev,
 		    (!netif_is_bridge_master(upper_dev) ||
 		     !mlxsw_sp_bridge_device_is_offloaded(mlxsw_sp,
 							  upper_dev))) {
-			err = mlxsw_sp_router_validate_uppers(mlxsw_sp,
-							      upper_dev,
-							      extack);
+			err = mlxsw_sp_netdevice_validate_uppers(mlxsw_sp,
+								 upper_dev,
+								 extack);
 			if (err)
 				return err;
 		}
@@ -4702,6 +4830,16 @@ static int mlxsw_sp_netdevice_port_upper_event(struct net_device *lower_dev,
 				mlxsw_sp_port_bridge_leave(mlxsw_sp_port,
 							   lower_dev,
 							   upper_dev);
+			/*
+			err = mlxsw_sp_netdevice_replay_changeupper(mlxsw_sp,
+								    upper_dev,
+								    extack);
+			if (err)
+				mlxsw_sp_port_bridge_leave(mlxsw_sp_port,
+							   lower_dev,
+							   upper_dev);
+			*/
+
 		} else if (netif_is_lag_master(upper_dev)) {
 			if (info->linking) {
 				err = mlxsw_sp_port_lag_join(mlxsw_sp_port,
@@ -4816,7 +4954,7 @@ static int mlxsw_sp_netdevice_port_vlan_event(struct net_device *vlan_dev,
 		if (!netif_is_bridge_master(upper_dev) &&
 		    !netif_is_macvlan(upper_dev) &&
 		    !netif_is_l3_master(upper_dev)) {
-			NL_SET_ERR_MSG_MOD(extack, "Unknown upper device type");
+			NL_SET_ERR_MSG_MOD(extack, "port_vlan Unknown upper device type");
 			return -EINVAL;
 		}
 		if (!info->linking)
@@ -4879,14 +5017,14 @@ static int mlxsw_sp_netdevice_lag_port_vlan_event(struct net_device *vlan_dev,
 static int mlxsw_sp_netdevice_bridge_vlan_event(struct net_device *vlan_dev,
 						struct net_device *br_dev,
 						unsigned long event, void *ptr,
-						u16 vid)
+						u16 vid, bool process_foreign)
 {
 	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_lower_get(vlan_dev);
 	struct netdev_notifier_changeupper_info *info = ptr;
 	struct netlink_ext_ack *extack;
 	struct net_device *upper_dev;
 
-	if (!mlxsw_sp)
+	if (!mlxsw_sp && !process_foreign)
 		return 0;
 
 	extack = netdev_notifier_info_to_extack(&info->info);
@@ -4896,16 +5034,25 @@ static int mlxsw_sp_netdevice_bridge_vlan_event(struct net_device *vlan_dev,
 		upper_dev = info->upper_dev;
 		if (!netif_is_macvlan(upper_dev) &&
 		    !netif_is_l3_master(upper_dev)) {
-			NL_SET_ERR_MSG_MOD(extack, "Unknown upper device type");
+			NL_SET_ERR_MSG_MOD(extack, "bridge_vlan Unknown upper device type");
 			return -EOPNOTSUPP;
 		}
 		if (!info->linking)
 			break;
+
+		// xxx Hmm. So this needs to realize that the lower will get a
+		// RIF and permit it under those circumstances. Jeeeezys.
+		if (netif_is_macvlan(upper_dev)) {
+			NL_SET_ERR_MSG_MOD(extack, "not implemented yet xxx");
+			return -EOPNOTSUPP;
+		}
+		/*
 		if (netif_is_macvlan(upper_dev) &&
 		    !mlxsw_sp_rif_exists(mlxsw_sp, vlan_dev)) {
 			NL_SET_ERR_MSG_MOD(extack, "macvlan is only supported on top of router interfaces");
 			return -EOPNOTSUPP;
 		}
+		*/
 		break;
 	case NETDEV_CHANGEUPPER:
 		upper_dev = info->upper_dev;
@@ -4920,7 +5067,8 @@ static int mlxsw_sp_netdevice_bridge_vlan_event(struct net_device *vlan_dev,
 }
 
 static int mlxsw_sp_netdevice_vlan_event(struct net_device *vlan_dev,
-					 unsigned long event, void *ptr)
+					 unsigned long event, void *ptr,
+					 bool process_foreign)
 {
 	struct net_device *real_dev = vlan_dev_real_dev(vlan_dev);
 	u16 vid = vlan_dev_vlan_id(vlan_dev);
@@ -4934,13 +5082,15 @@ static int mlxsw_sp_netdevice_vlan_event(struct net_device *vlan_dev,
 							      ptr, vid);
 	else if (netif_is_bridge_master(real_dev))
 		return mlxsw_sp_netdevice_bridge_vlan_event(vlan_dev, real_dev,
-							    event, ptr, vid);
+							    event, ptr, vid,
+							    process_foreign);
 
 	return 0;
 }
 
 static int mlxsw_sp_netdevice_bridge_event(struct net_device *br_dev,
-					   unsigned long event, void *ptr)
+					   unsigned long event, void *ptr,
+					   bool process_foreign)
 {
 	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_lower_get(br_dev);
 	struct netdev_notifier_changeupper_info *info = ptr;
@@ -4948,7 +5098,7 @@ static int mlxsw_sp_netdevice_bridge_event(struct net_device *br_dev,
 	struct net_device *upper_dev;
 	u16 proto;
 
-	if (!mlxsw_sp)
+	if (!mlxsw_sp && !process_foreign)
 		return 0;
 
 	extack = netdev_notifier_info_to_extack(&info->info);
@@ -4959,7 +5109,7 @@ static int mlxsw_sp_netdevice_bridge_event(struct net_device *br_dev,
 		if (!is_vlan_dev(upper_dev) &&
 		    !netif_is_macvlan(upper_dev) &&
 		    !netif_is_l3_master(upper_dev)) {
-			NL_SET_ERR_MSG_MOD(extack, "Unknown upper device type");
+			NL_SET_ERR_MSG_MOD(extack, "bridge Unknown upper device type");
 			return -EOPNOTSUPP;
 		}
 		if (!info->linking)
@@ -5086,21 +5236,19 @@ static int mlxsw_sp_netdevice_vxlan_event(struct mlxsw_sp *mlxsw_sp,
 	return 0;
 }
 
-int mlxsw_sp_netdevice_event(struct notifier_block *nb,
-			     unsigned long event, void *ptr)
+static int __mlxsw_sp_netdevice_event(struct mlxsw_sp *mlxsw_sp,
+				      unsigned long event, void *ptr,
+				      bool process_foreign)
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct mlxsw_sp_span_entry *span_entry;
-	struct mlxsw_sp *mlxsw_sp;
 	int err = 0;
 
-	mlxsw_sp = container_of(nb, struct mlxsw_sp, netdevice_nb);
 	if (event == NETDEV_UNREGISTER) {
 		span_entry = mlxsw_sp_span_entry_find_by_port(mlxsw_sp, dev);
 		if (span_entry)
 			mlxsw_sp_span_entry_invalidate(mlxsw_sp, span_entry);
 	}
-	mlxsw_sp_span_respin(mlxsw_sp);
 
 	if (netif_is_vxlan(dev))
 		err = mlxsw_sp_netdevice_vxlan_event(mlxsw_sp, dev, event, ptr);
@@ -5109,11 +5257,26 @@ int mlxsw_sp_netdevice_event(struct notifier_block *nb,
 	else if (netif_is_lag_master(dev))
 		err = mlxsw_sp_netdevice_lag_event(dev, event, ptr);
 	else if (is_vlan_dev(dev))
-		err = mlxsw_sp_netdevice_vlan_event(dev, event, ptr);
+		err = mlxsw_sp_netdevice_vlan_event(dev, event, ptr,
+						    process_foreign);
 	else if (netif_is_bridge_master(dev))
-		err = mlxsw_sp_netdevice_bridge_event(dev, event, ptr);
+		err = mlxsw_sp_netdevice_bridge_event(dev, event, ptr,
+						      process_foreign);
 	else if (netif_is_macvlan(dev))
 		err = mlxsw_sp_netdevice_macvlan_event(dev, event, ptr);
+
+	return err;
+}
+
+static int mlxsw_sp_netdevice_event(struct notifier_block *nb,
+				    unsigned long event, void *ptr)
+{
+	struct mlxsw_sp *mlxsw_sp;
+	int err;
+
+	mlxsw_sp = container_of(nb, struct mlxsw_sp, netdevice_nb);
+	mlxsw_sp_span_respin(mlxsw_sp);
+	err = __mlxsw_sp_netdevice_event(mlxsw_sp, event, ptr, false);
 
 	return notifier_from_errno(err);
 }
