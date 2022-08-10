@@ -9574,6 +9574,120 @@ mlxsw_sp_netdevice_vrf_event(struct net_device *l3_dev, unsigned long event,
 	return err;
 }
 
+static bool mlxsw_sp_is_enslavement_event(unsigned long event, void *ptr)
+{
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct netdev_notifier_changeupper_info *info = ptr;
+
+	if (event != NETDEV_CHANGEUPPER)
+		return false;
+
+	if (!info->linking)
+		return false;
+
+	// xxx this needs to be more complex: enslaving a LAG with a lower is
+	// also an enslavement event. Enslaving a port to a LAG likewise.
+	return mlxsw_sp_port_dev_check(dev) &&
+	       netif_is_bridge_master(info->upper_dev);
+}
+
+struct mlxsw_sp_router_replay_inetaddr_up {
+	struct mlxsw_sp *mlxsw_sp;
+	struct netlink_ext_ack *extack;
+	unsigned int count_replayed;
+};
+
+int mlxsw_sp_netdevice_event(struct notifier_block *nb,
+			     unsigned long event, void *ptr);
+
+static int mlxsw_sp_router_replay_inetaddr_up(struct net_device *dev,
+					      struct netdev_nested_priv *priv)
+{
+	struct mlxsw_sp_router_replay_inetaddr_up *ctx = priv->data;
+	struct mlxsw_sp_crif *crif;
+	int err;
+
+	if (mlxsw_sp_dev_addr_list_empty(dev))
+		return 0;
+
+	crif = mlxsw_sp_crif_lookup(ctx->mlxsw_sp->router, dev);
+	if (!crif || crif->rif)
+		return 0;
+
+	if (!mlxsw_sp_rif_should_config(crif->rif, dev, NETDEV_UP))
+		return 0;
+
+	err = __mlxsw_sp_inetaddr_event(ctx->mlxsw_sp, dev, NETDEV_UP,
+					ctx->extack);
+	if (err)
+		return err;
+
+	ctx->count_replayed++;
+	return 0;
+}
+
+static int mlxsw_sp_router_unreplay_inetaddr_up(struct net_device *dev,
+						struct netdev_nested_priv *priv)
+{
+	struct mlxsw_sp_router_replay_inetaddr_up *ctx = priv->data;
+	struct mlxsw_sp_crif *crif;
+	struct mlxsw_sp_rif *rif;
+
+	if (!ctx->count_replayed)
+		return 0;
+
+	if (mlxsw_sp_dev_addr_list_empty(dev))
+		return 0;
+
+	crif = mlxsw_sp_crif_lookup(ctx->mlxsw_sp->router, dev);
+	if (!crif || !crif->rif)
+		return 0;
+
+	if (!mlxsw_sp_rif_should_config(rif, dev, NETDEV_DOWN))
+		return 0;
+
+	__mlxsw_sp_inetaddr_event(ctx->mlxsw_sp, dev, NETDEV_DOWN, NULL);
+
+	ctx->count_replayed--;
+	return 0;
+}
+
+static int
+mlxsw_sp_netdevice_enslavement_event(struct mlxsw_sp *mlxsw_sp,
+				     struct net_device *dev,
+				     unsigned long event,
+				     struct netdev_notifier_changeupper_info *info)
+{
+	struct mlxsw_sp_router_replay_inetaddr_up ctx = {
+		.extack = netdev_notifier_info_to_extack(&info->info),
+		.mlxsw_sp = mlxsw_sp,
+	};
+	struct netdev_nested_priv priv = {
+		.data = &ctx,
+	};
+	int err;
+
+	err = mlxsw_sp_router_replay_inetaddr_up(info->upper_dev, &priv);
+	if (err)
+		return err;
+
+	err = netdev_walk_all_upper_dev_rcu(info->upper_dev,
+					    mlxsw_sp_router_replay_inetaddr_up,
+					    &priv);
+	if (err == -EALREADY)
+		return 0;
+	if (err)
+		goto err_replay_up;
+
+	return 0;
+
+err_replay_up:
+	netdev_walk_all_upper_dev_rcu(dev, mlxsw_sp_router_unreplay_inetaddr_up,
+				      &priv);
+	mlxsw_sp_router_unreplay_inetaddr_up(info->upper_dev, &priv);
+	return err;
+}
+
 static int mlxsw_sp_router_netdevice_event(struct notifier_block *nb,
 					   unsigned long event, void *ptr)
 {
@@ -9600,6 +9714,9 @@ static int mlxsw_sp_router_netdevice_event(struct notifier_block *nb,
 		err = mlxsw_sp_netdevice_router_port_event(dev, event, ptr);
 	else if (mlxsw_sp_is_vrf_event(event, ptr))
 		err = mlxsw_sp_netdevice_vrf_event(dev, event, ptr);
+	else if (mlxsw_sp_is_enslavement_event(event, ptr))
+		err = mlxsw_sp_netdevice_enslavement_event(mlxsw_sp, dev, event,
+							   ptr);
 
 	mutex_unlock(&mlxsw_sp->router->lock);
 
