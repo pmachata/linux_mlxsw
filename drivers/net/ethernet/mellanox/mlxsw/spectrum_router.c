@@ -4132,6 +4132,8 @@ mlxsw_sp_nexthop_dead_neigh_replace(struct mlxsw_sp *mlxsw_sp,
 		n = neigh_create(nh->neigh_tbl, &nh->gw_addr, dev);
 		if (IS_ERR(n))
 			return PTR_ERR(n);
+		// xxx we don't need to keep the neighbor up to date if it's not
+		// offloaded
 		neigh_event_send(n, NULL);
 	}
 
@@ -4377,6 +4379,7 @@ static int mlxsw_sp_nexthop_type_init(struct mlxsw_sp *mlxsw_sp,
 
 	nh->type = MLXSW_SP_NEXTHOP_TYPE_ETH;
 	crif = mlxsw_sp_crif_lookup(mlxsw_sp->router, dev);
+	printk(KERN_WARNING "CRIF for next hop's dev %s? %d\n", dev->name, !!crif);
 	if (!crif)
 		return 0;
 
@@ -4398,6 +4401,9 @@ err_neigh_init:
 static int mlxsw_sp_nexthop_type_rif_made(struct mlxsw_sp *mlxsw_sp,
 					  struct mlxsw_sp_nexthop *nh)
 {
+	printk(KERN_WARNING "nexthop: RIF made (%s)\n",
+	       mlxsw_sp_nexthop_dev(nh)->name);
+
 	switch (nh->type) {
 	case MLXSW_SP_NEXTHOP_TYPE_ETH:
 		return mlxsw_sp_nexthop_neigh_init(mlxsw_sp, nh);
@@ -4411,6 +4417,8 @@ static int mlxsw_sp_nexthop_type_rif_made(struct mlxsw_sp *mlxsw_sp,
 static void mlxsw_sp_nexthop_type_rif_gone(struct mlxsw_sp *mlxsw_sp,
 					   struct mlxsw_sp_nexthop *nh)
 {
+	printk(KERN_WARNING "nexthop: RIF gone\n");
+
 	switch (nh->type) {
 	case MLXSW_SP_NEXTHOP_TYPE_ETH:
 		mlxsw_sp_nexthop_neigh_fini(mlxsw_sp, nh);
@@ -4580,6 +4588,9 @@ static void mlxsw_sp_nexthop_rif_gone_sync(struct mlxsw_sp *mlxsw_sp,
 
 	list_for_each_entry_safe(nh, tmp, &rif->crif->nexthop_list,
 				 crif_list_node) {
+		// xxx why does this work? RIF gone will call crif_fini,
+		// therefore unlinking route from the CRIF. This should break
+		// things...
 		mlxsw_sp_nexthop_type_rif_gone(mlxsw_sp, nh);
 		mlxsw_sp_nexthop_group_refresh(mlxsw_sp, nh->nhgi->nh_grp);
 	}
@@ -6692,6 +6703,8 @@ static int mlxsw_sp_nexthop6_init(struct mlxsw_sp *mlxsw_sp,
 		return 0;
 	nh->ifindex = dev->ifindex;
 
+	printk(KERN_WARNING "nexthop6 init netdev %s\n",
+	       rt->fib6_nh->fib_nh_dev ? rt->fib6_nh->fib_nh_dev->name : "(null)");
 	err = mlxsw_sp_nexthop_type_init(mlxsw_sp, nh, dev);
 	if (err)
 		goto err_nexthop_type_init;
@@ -9095,6 +9108,8 @@ static int __mlxsw_sp_inetaddr_event(struct mlxsw_sp *mlxsw_sp,
 				     unsigned long event,
 				     struct netlink_ext_ack *extack)
 {
+	printk(KERN_WARNING "__mlxsw_sp_inetaddr_event %s\n", dev->name);
+
 	if (mlxsw_sp_port_dev_check(dev))
 		return mlxsw_sp_inetaddr_port_event(dev, event, extack);
 	else if (netif_is_lag_master(dev))
@@ -9661,6 +9676,9 @@ static int mlxsw_sp_router_replay_inetaddr_up(struct net_device *dev,
 	struct mlxsw_sp_crif *crif;
 	int err;
 
+	printk(KERN_WARNING "mlxsw_sp_router_replay_inetaddr_up %s\n",
+	       dev->name);
+
 	if (mlxsw_sp_dev_addr_list_empty(dev))
 		return 0;
 
@@ -9676,6 +9694,8 @@ static int mlxsw_sp_router_replay_inetaddr_up(struct net_device *dev,
 	if (err)
 		return err;
 
+	printk(KERN_WARNING "/mlxsw_sp_router_replay_inetaddr_up %s\n",
+	       dev->name);
 	ctx->count_replayed++;
 	return 0;
 }
@@ -9686,6 +9706,9 @@ static int mlxsw_sp_router_unreplay_inetaddr_up(struct net_device *dev,
 	struct mlxsw_sp_router_replay_inetaddr_up *ctx = priv->data;
 	struct mlxsw_sp_crif *crif;
 	struct mlxsw_sp_rif *rif;
+
+	printk(KERN_WARNING "mlxsw_sp_router_unreplay_inetaddr_up %s\n",
+	       dev->name);
 
 	if (!ctx->count_replayed)
 		return 0;

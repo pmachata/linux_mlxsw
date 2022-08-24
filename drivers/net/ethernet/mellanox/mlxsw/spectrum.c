@@ -4691,6 +4691,9 @@ static int mlxsw_sp_netdevice_validate_uppers(struct mlxsw_sp *mlxsw_sp,
 	struct list_head *iter;
 	int err;
 
+	printk(KERN_WARNING "validating %s's uppers\n",
+	       dev->name);
+
 	netdev_for_each_upper_dev_rcu(dev, upper_dev, iter) {
 		struct netdev_notifier_changeupper_info info = {
 			.info = {
@@ -4710,6 +4713,8 @@ static int mlxsw_sp_netdevice_validate_uppers(struct mlxsw_sp *mlxsw_sp,
 			.upper_info = NULL,
 		};
 
+		printk(KERN_WARNING "validate %s's upper %s\n",
+		       dev->name, upper_dev->name);
 		err = __mlxsw_sp_netdevice_event(mlxsw_sp,
 						 NETDEV_PRECHANGEUPPER,
 						 &info, true);
@@ -5054,6 +5059,9 @@ static int mlxsw_sp_netdevice_bridge_vlan_event(struct mlxsw_sp *mlxsw_sp,
 		}
 		if (!info->linking)
 			break;
+
+		// xxx Hmm. So this needs to realize that the lower will get a
+		// RIF and permit it under those circumstances. Jeeeezys.
 		if (netif_is_macvlan(upper_dev) &&
 		    !mlxsw_sp_rif_exists(mlxsw_sp, vlan_dev)) {
 			NL_SET_ERR_MSG_MOD(extack, "macvlan is only supported on top of router interfaces");
@@ -5195,6 +5203,7 @@ static int mlxsw_sp_netdevice_vxlan_event(struct mlxsw_sp *mlxsw_sp,
 		upper_dev = cu_info->upper_dev;
 		if (!netif_is_bridge_master(upper_dev))
 			return 0;
+		// xxx
 		if (!mlxsw_sp_lower_get(upper_dev))
 			return 0;
 		if (!mlxsw_sp_bridge_vxlan_is_valid(upper_dev, extack))
