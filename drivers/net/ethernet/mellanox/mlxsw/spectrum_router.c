@@ -3561,15 +3561,15 @@ static int __mlxsw_sp_nexthop_eth_update(struct mlxsw_sp *mlxsw_sp,
 					 bool force, char *ratr_pl)
 {
 	struct mlxsw_sp_neigh_entry *neigh_entry = nh->neigh_entry;
+	struct mlxsw_sp_rif *rif = mlxsw_sp_nexthop_rif(nh);
 	enum mlxsw_reg_ratr_op op;
-	u16 rif_index;
 
-	rif_index = nh->rif ? nh->rif->rif_index :
-			      mlxsw_sp->router->lb_rif_index;
+	if (!rif) // xxx never holds? Even blackhole routes now have a CRIF with a RIF.
+		rif = mlxsw_sp->router->lb_crif->rif;
 	op = force ? MLXSW_REG_RATR_OP_WRITE_WRITE_ENTRY :
 		     MLXSW_REG_RATR_OP_WRITE_WRITE_ENTRY_ON_ACTIVITY;
 	mlxsw_reg_ratr_pack(ratr_pl, op, true, MLXSW_REG_RATR_TYPE_ETHERNET,
-			    adj_index, rif_index);
+			    adj_index, rif->rif_index);
 	switch (nh->action) {
 	case MLXSW_SP_NEXTHOP_ACTION_FORWARD:
 		mlxsw_reg_ratr_eth_entry_pack(ratr_pl, neigh_entry->ha);
@@ -4532,7 +4532,7 @@ static int mlxsw_sp_adj_trap_entry_init(struct mlxsw_sp *mlxsw_sp)
 	mlxsw_reg_ratr_pack(ratr_pl, MLXSW_REG_RATR_OP_WRITE_WRITE_ENTRY, true,
 			    MLXSW_REG_RATR_TYPE_ETHERNET,
 			    mlxsw_sp->router->adj_trap_index,
-			    mlxsw_sp->router->lb_rif_index);
+			    mlxsw_sp->router->lb_crif->rif->rif_index);
 	mlxsw_reg_ratr_trap_action_set(ratr_pl, trap_action);
 	mlxsw_reg_ratr_trap_id_set(ratr_pl, MLXSW_TRAP_ID_RTR_EGRESS0);
 	err = mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(ratr), ratr_pl);
@@ -4848,15 +4848,13 @@ static bool mlxsw_sp_nexthop_obj_is_gateway(struct mlxsw_sp *mlxsw_sp,
 static void mlxsw_sp_nexthop_obj_blackhole_init(struct mlxsw_sp *mlxsw_sp,
 						struct mlxsw_sp_nexthop *nh)
 {
-	u16 lb_rif_index = mlxsw_sp->router->lb_rif_index;
-
 	nh->action = MLXSW_SP_NEXTHOP_ACTION_DISCARD;
 	nh->should_offload = 1;
 	/* While nexthops that discard packets do not forward packets
 	 * via an egress RIF, they still need to be programmed using a
 	 * valid RIF, so use the loopback RIF created during init.
 	 */
-	nh->rif = mlxsw_sp->router->rifs[lb_rif_index];
+	nh->rif = mlxsw_sp->router->lb_crif->rif;
 }
 
 static void mlxsw_sp_nexthop_obj_blackhole_fini(struct mlxsw_sp *mlxsw_sp,
@@ -10080,8 +10078,10 @@ mlxsw_sp_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 tb_id,
 	if (IS_ERR(vr))
 		return ERR_CAST(vr);
 
-	if (refcount_inc_not_zero(&vr->ul_rif_refcnt))
+	if (refcount_inc_not_zero(&vr->ul_rif_refcnt)) {
+		WARN_ON(vr->ul_rif->crif != ul_crif); // xxx maybe drop?
 		return vr->ul_rif;
+	}
 
 	vr->ul_rif = mlxsw_sp_ul_rif_create(mlxsw_sp, vr, ul_crif, extack);
 	if (IS_ERR(vr->ul_rif)) {
@@ -10631,7 +10631,6 @@ static int mlxsw_sp_lb_rif_init(struct mlxsw_sp *mlxsw_sp)
 	struct net_device *lb_dev = mlxsw_sp_net(mlxsw_sp)->loopback_dev;
 	struct mlxsw_sp_router *router = mlxsw_sp->router;
 	u16 lb_rif_index;
-	int err;
 
 	router->lb_crif = mlxsw_sp_crif_lookup(router, lb_dev);
 	if (WARN_ON(!router->lb_crif))
@@ -10641,19 +10640,13 @@ static int mlxsw_sp_lb_rif_init(struct mlxsw_sp *mlxsw_sp)
 	 * (default VRF). Any table can be used, but the main table exists
 	 * anyway, so we do not waste resources.
 	 */
-	err = mlxsw_sp_router_ul_rif_get(mlxsw_sp, RT_TABLE_MAIN,
-					 &lb_rif_index);
-	if (err)
-		return err;
-
-	mlxsw_sp->router->lb_rif_index = lb_rif_index;
-
-	return 0;
+	return mlxsw_sp_router_ul_rif_get(mlxsw_sp, RT_TABLE_MAIN,
+					  &lb_rif_index);
 }
 
 static void mlxsw_sp_lb_rif_fini(struct mlxsw_sp *mlxsw_sp)
 {
-	mlxsw_sp_router_ul_rif_put(mlxsw_sp, mlxsw_sp->router->lb_rif_index);
+	mlxsw_sp_ul_rif_put(mlxsw_sp->router->lb_crif->rif);
 }
 
 static int mlxsw_sp1_router_init(struct mlxsw_sp *mlxsw_sp)
