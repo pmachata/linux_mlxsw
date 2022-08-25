@@ -1123,6 +1123,21 @@ mlxsw_sp_crif_lookup(struct mlxsw_sp_router *router, const struct net_device *de
 				      mlxsw_sp_crif_ht_params);
 }
 
+static struct mlxsw_sp_crif *
+mlxsw_sp_crif_lookup_vrf(struct mlxsw_sp_router *router, u32 tb_id)
+{
+	struct mlxsw_sp_crif *crif;
+
+	if (tb_id == RT_TABLE_MAIN)
+		return router->lb_crif;
+
+	list_for_each_entry(crif, &router->vrf_crif_list, vrf_crif_list_node)
+		if (l3mdev_fib_table(crif->key.dev) == tb_id)
+			return crif;
+
+	return NULL;
+}
+
 static struct mlxsw_sp_rif *
 mlxsw_sp_rif_create(struct mlxsw_sp *mlxsw_sp,
 		    const struct mlxsw_sp_rif_params *params,
@@ -10007,6 +10022,7 @@ mlxsw_sp_rif_ipip_lb_ul_rif_op(struct mlxsw_sp_rif *ul_rif, bool enable)
 
 static struct mlxsw_sp_rif *
 mlxsw_sp_ul_rif_create(struct mlxsw_sp *mlxsw_sp, struct mlxsw_sp_vr *vr,
+		       struct mlxsw_sp_crif *ul_crif,
 		       struct netlink_ext_ack *extack)
 {
 	struct mlxsw_sp_rif *ul_rif;
@@ -10019,7 +10035,7 @@ mlxsw_sp_ul_rif_create(struct mlxsw_sp *mlxsw_sp, struct mlxsw_sp_vr *vr,
 		return ERR_PTR(err);
 	}
 
-	ul_rif = mlxsw_sp_rif_alloc(sizeof(*ul_rif), rif_index, vr->id, NULL);
+	ul_rif = mlxsw_sp_rif_alloc(sizeof(*ul_rif), rif_index, vr->id, ul_crif);
 	if (!ul_rif)
 		return ERR_PTR(-ENOMEM);
 
@@ -10052,8 +10068,13 @@ static struct mlxsw_sp_rif *
 mlxsw_sp_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 tb_id,
 		    struct netlink_ext_ack *extack)
 {
+	struct mlxsw_sp_crif *ul_crif;
 	struct mlxsw_sp_vr *vr;
 	int err;
+
+	ul_crif = mlxsw_sp_crif_lookup_vrf(mlxsw_sp->router, tb_id);
+	if (WARN_ON(!ul_crif))
+		return ERR_PTR(-ENOENT);
 
 	vr = mlxsw_sp_vr_get(mlxsw_sp, tb_id, extack);
 	if (IS_ERR(vr))
@@ -10062,7 +10083,7 @@ mlxsw_sp_ul_rif_get(struct mlxsw_sp *mlxsw_sp, u32 tb_id,
 	if (refcount_inc_not_zero(&vr->ul_rif_refcnt))
 		return vr->ul_rif;
 
-	vr->ul_rif = mlxsw_sp_ul_rif_create(mlxsw_sp, vr, extack);
+	vr->ul_rif = mlxsw_sp_ul_rif_create(mlxsw_sp, vr, ul_crif, extack);
 	if (IS_ERR(vr->ul_rif)) {
 		err = PTR_ERR(vr->ul_rif);
 		goto err_ul_rif_create;
@@ -10607,8 +10628,14 @@ static void __mlxsw_sp_router_fini(struct mlxsw_sp *mlxsw_sp)
 
 static int mlxsw_sp_lb_rif_init(struct mlxsw_sp *mlxsw_sp)
 {
+	struct net_device *lb_dev = mlxsw_sp_net(mlxsw_sp)->loopback_dev;
+	struct mlxsw_sp_router *router = mlxsw_sp->router;
 	u16 lb_rif_index;
 	int err;
+
+	router->lb_crif = mlxsw_sp_crif_lookup(router, lb_dev);
+	if (WARN_ON(!router->lb_crif))
+		return -ENODEV;
 
 	/* Create a generic loopback RIF associated with the main table
 	 * (default VRF). Any table can be used, but the main table exists
