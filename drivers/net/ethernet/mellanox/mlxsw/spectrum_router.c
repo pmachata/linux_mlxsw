@@ -57,6 +57,7 @@ struct mlxsw_sp_crif_key {
 struct mlxsw_sp_crif {
 	struct mlxsw_sp_crif_key key;
 	struct rhash_head ht_node;
+	struct list_head vrf_crif_list_node;
 };
 
 static const struct rhashtable_params mlxsw_sp_crif_ht_params = {
@@ -9208,6 +9209,9 @@ mlxsw_sp_crif_register(struct mlxsw_sp_router *router, struct net_device *dev)
 	if (err)
 		goto err_netdev_insert;
 
+	if (netif_is_l3_master(dev))
+		list_add(&crif->vrf_crif_list_node, &router->vrf_crif_list);
+
 	return crif;
 
 err_netdev_insert:
@@ -9218,6 +9222,8 @@ err_netdev_insert:
 static void mlxsw_sp_crif_unregister(struct mlxsw_sp_router *router,
 				     struct mlxsw_sp_crif *crif)
 {
+	if (netif_is_l3_master(crif->key.dev))
+		list_del(&crif->vrf_crif_list_node);
 	mlxsw_sp_crif_remove(router, crif);
 	mlxsw_sp_crif_free(crif);
 }
@@ -10660,6 +10666,7 @@ int mlxsw_sp_router_init(struct mlxsw_sp *mlxsw_sp,
 	INIT_DELAYED_WORK(&mlxsw_sp->router->nh_grp_activity_dw,
 			  mlxsw_sp_nh_grp_activity_work);
 	INIT_LIST_HEAD(&mlxsw_sp->router->nexthop_neighs_list);
+	INIT_LIST_HEAD(&mlxsw_sp->router->vrf_crif_list);
 	err = __mlxsw_sp_router_init(mlxsw_sp);
 	if (err)
 		goto err_router_init;
@@ -10850,6 +10857,7 @@ void mlxsw_sp_router_fini(struct mlxsw_sp *mlxsw_sp)
 	mlxsw_sp_rifs_fini(mlxsw_sp);
 	unregister_netdevice_notifier_net(mlxsw_sp_net(mlxsw_sp),
 					  &mlxsw_sp->router->crif_nb);
+	WARN_ON(!list_empty(&router->vrf_crif_list));
 	rhashtable_destroy(&mlxsw_sp->router->crif_ht);
 	mlxsw_sp_ipips_fini(mlxsw_sp);
 	__mlxsw_sp_router_fini(mlxsw_sp);
