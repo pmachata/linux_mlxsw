@@ -5024,6 +5024,8 @@ static int mlxsw_sp_netdevice_port_vlan_event(struct net_device *vlan_dev,
 		    (!netif_is_bridge_master(upper_dev) ||
 		     !mlxsw_sp_bridge_device_is_offloaded(mlxsw_sp,
 							  upper_dev))) {
+			// xxx test me
+			WARN_ON(1);
 			err = mlxsw_sp_netdevice_validate_uppers(mlxsw_sp,
 								 upper_dev,
 								 extack);
