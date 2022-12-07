@@ -234,6 +234,28 @@ out:
 	return pmctx;
 }
 
+static struct net_bridge_mcast_port *
+br_multicast_port_vid_to_port_ctx(struct net_bridge_port *port, u16 vid)
+{
+	struct net_bridge_mcast_port *pmctx = NULL;
+	struct net_bridge_vlan *vlan;
+
+	lockdep_assert_held_once(&port->br->multicast_lock);
+
+	if (!br_opt_get(port->br, BROPT_MCAST_VLAN_SNOOPING_ENABLED))
+		return NULL;
+
+	rcu_read_lock();
+
+	vlan = br_vlan_find(nbp_vlan_group_rcu(port), vid);
+	if (vlan && !br_multicast_port_ctx_vlan_disabled(&vlan->port_mcast_ctx))
+		pmctx = &vlan->port_mcast_ctx;
+
+	rcu_read_unlock();
+
+	return pmctx;
+}
+
 /* when snooping we need to check if the contexts should be used
  * in the following order:
  * - if pmctx is non-NULL (port), check if it should be used
@@ -668,11 +690,87 @@ void br_multicast_del_group_src(struct net_bridge_group_src *src,
 	__br_multicast_del_group_src(src);
 }
 
+static void br_multicast_port_ngroups_dec_one(struct net_bridge_mcast_port *pmctx)
+{
+	--pmctx->mdb_n_entries;
+}
+
+static int
+br_multicast_port_ngroups_inc_one(struct net_bridge_mcast_port *pmctx,
+				  struct netlink_ext_ack *extack)
+{
+	if (pmctx->mdb_max_entries &&
+	    pmctx->mdb_n_entries == pmctx->mdb_max_entries)
+		return -E2BIG;
+
+	pmctx->mdb_n_entries++;
+	return 0;
+}
+
+static void br_multicast_port_ngroups_dec(struct net_bridge_port *port, u16 vid)
+{
+	struct net_bridge_mcast_port *pmctx;
+
+	lockdep_assert_held_once(&port->br->multicast_lock);
+
+	if (vid) {
+		pmctx = br_multicast_port_vid_to_port_ctx(port, vid);
+		if (pmctx)
+			br_multicast_port_ngroups_dec_one(pmctx);
+	}
+	br_multicast_port_ngroups_dec_one(&port->multicast_ctx);
+}
+
+static int br_multicast_port_ngroups_inc(struct net_bridge_port *port, u16 vid,
+					 struct netlink_ext_ack *extack)
+{
+	struct net_bridge_mcast_port *pmctx;
+	int err;
+
+	lockdep_assert_held_once(&port->br->multicast_lock);
+
+	/* Always count on the port context. */
+	err = br_multicast_port_ngroups_inc_one(&port->multicast_ctx, extack);
+	if (err) {
+		NL_SET_ERR_MSG_MOD(extack, "Port is already a member in mcast_max_groups groups");
+		return err;
+	}
+
+	/* Only count on the VLAN context if VID is given, and if snooping on
+	 * that VLAN is enabled.
+	 */
+	if (!vid)
+		return 0;
+
+	pmctx = br_multicast_port_vid_to_port_ctx(port, vid);
+	if (!pmctx)
+		return 0;
+
+	err = br_multicast_port_ngroups_inc_one(pmctx, extack);
+	if (err) {
+		NL_SET_ERR_MSG_MOD(extack, "Port-VLAN is already a member in mcast_max_groups groups");
+		goto dec_one_out;
+	}
+
+	return 0;
+
+dec_one_out:
+	br_multicast_port_ngroups_dec_one(&port->multicast_ctx);
+	return err;
+}
+
 static void br_multicast_destroy_port_group(struct net_bridge_mcast_gc *gc)
 {
 	struct net_bridge_port_group *pg;
+	struct net_bridge_port *port;
 
 	pg = container_of(gc, struct net_bridge_port_group, mcast_gc);
+	port = pg->key.port;
+
+	spin_lock_bh(&port->br->multicast_lock);
+	br_multicast_port_ngroups_dec(port, pg->key.addr.vid);
+	spin_unlock_bh(&port->br->multicast_lock);
+
 	WARN_ON(!hlist_unhashed(&pg->mglist));
 	WARN_ON(!hlist_empty(&pg->src_list));
 
@@ -1288,10 +1386,15 @@ struct net_bridge_port_group *br_multicast_new_port_group(
 			struct netlink_ext_ack *extack)
 {
 	struct net_bridge_port_group *p;
+	int err;
+
+	err = br_multicast_port_ngroups_inc(port, group->vid, extack);
+	if (err)
+		return NULL;
 
 	p = kzalloc(sizeof(*p), GFP_ATOMIC);
 	if (unlikely(!p))
-		return NULL;
+		goto dec_out;
 
 	p->key.addr = *group;
 	p->key.port = port;
@@ -1322,11 +1425,14 @@ struct net_bridge_port_group *br_multicast_new_port_group(
 
 free_out:
 	kfree(p);
+dec_out:
+	br_multicast_port_ngroups_dec(port, group->vid);
 	return NULL;
 }
 
 void br_multicast_del_port_group(struct net_bridge_port_group *p)
 {
+	br_multicast_port_ngroups_dec(p->key.port, p->key.addr.vid);
 	hlist_del_init(&p->mglist);
 	kfree(p);
 }
@@ -1928,6 +2034,8 @@ static void __br_multicast_enable_port_ctx(struct net_bridge_mcast_port *pmctx)
 {
 	struct net_bridge *br = pmctx->port->br;
 	struct net_bridge_mcast *brmctx;
+	struct net_bridge_port_group *pg;
+	struct hlist_node *n;
 
 	brmctx = br_multicast_port_ctx_get_global(pmctx);
 	if (!br_opt_get(br, BROPT_MULTICAST_ENABLED) ||
@@ -1941,6 +2049,14 @@ static void __br_multicast_enable_port_ctx(struct net_bridge_mcast_port *pmctx)
 	if (pmctx->multicast_router == MDB_RTR_TYPE_PERM) {
 		br_ip4_multicast_add_router(brmctx, pmctx);
 		br_ip6_multicast_add_router(brmctx, pmctx);
+	}
+
+	if (br_multicast_port_ctx_is_vlan(pmctx)) {
+		/* When VLAN snooping is toggled, even when it is enabled, all
+		 * impacted MDB entries are flushed.
+		 */
+		pmctx->mdb_n_entries = 0;
+		pmctx->mdb_max_entries = 0;
 	}
 }
 
