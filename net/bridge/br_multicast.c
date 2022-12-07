@@ -1305,10 +1305,8 @@ struct net_bridge_port_group *br_multicast_new_port_group(
 
 	if (!br_multicast_is_star_g(group) &&
 	    rhashtable_lookup_insert_fast(&port->br->sg_port_tbl, &p->rhnode,
-					  br_sg_port_rht_params)) {
-		kfree(p);
-		return NULL;
-	}
+					  br_sg_port_rht_params))
+		goto free_out;
 
 	rcu_assign_pointer(p->next, next);
 	timer_setup(&p->timer, br_multicast_port_group_expired, 0);
@@ -1321,6 +1319,10 @@ struct net_bridge_port_group *br_multicast_new_port_group(
 		eth_broadcast_addr(p->eth_addr);
 
 	return p;
+
+free_out:
+	kfree(p);
+	return NULL;
 }
 
 void br_multicast_del_port_group(struct net_bridge_port_group *p)
