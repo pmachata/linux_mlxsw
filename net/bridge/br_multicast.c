@@ -707,6 +707,12 @@ br_multicast_port_ngroups_inc_one(struct net_bridge_mcast_port *pmctx,
 	}
 
 	WRITE_ONCE(pmctx->mdb_n_entries, n + 1);
+
+	printk(KERN_WARNING "ngroups for port %s vid %d inc to %d\n",
+	       pmctx->port->dev->name,
+	       pmctx->vlan ? pmctx->vlan->vid : 0,
+	       READ_ONCE(pmctx->mdb_n_entries));
+
 	return 0;
 }
 
@@ -716,6 +722,11 @@ static void br_multicast_port_ngroups_dec_one(struct net_bridge_mcast_port *pmct
 
 	WARN_ON_ONCE(n == 0);
 	WRITE_ONCE(pmctx->mdb_n_entries, n - 1);
+
+	printk(KERN_WARNING "ngroups for port %s vid %d dec to %d\n",
+	       pmctx->port->dev->name,
+	       pmctx->vlan ? pmctx->vlan->vid : 0,
+	       READ_ONCE(pmctx->mdb_n_entries));
 }
 
 static int br_multicast_port_ngroups_inc(struct net_bridge_port *port,
@@ -2043,6 +2054,7 @@ void br_multicast_del_port(struct net_bridge_port *port)
 	HLIST_HEAD(deleted_head);
 	struct hlist_node *n;
 
+	printk(KERN_WARNING "br_multicast_del_port %s\n", port->dev->name);
 	/* Take care of the remaining groups, only perm ones should be left */
 	spin_lock_bh(&br->multicast_lock);
 	hlist_for_each_entry_safe(pg, n, &port->mglist, mglist)
@@ -4208,6 +4220,9 @@ void br_multicast_toggle_one_vlan(struct net_bridge_vlan *vlan, bool on)
 {
 	struct net_bridge *br;
 
+	printk(KERN_WARNING "request to toggle mcast on vid %d to %d\n",
+	       vlan->vid, on);
+
 	/* it's okay to check for the flag without the multicast lock because it
 	 * can only change under RTNL -> multicast_lock, we need the latter to
 	 * sync with timers and packets
@@ -4216,6 +4231,7 @@ void br_multicast_toggle_one_vlan(struct net_bridge_vlan *vlan, bool on)
 		return;
 
 	if (br_vlan_is_master(vlan)) {
+		printk(KERN_WARNING "toggle master\n");
 		br = vlan->br;
 
 		if (!br_vlan_is_brentry(vlan) ||
@@ -4225,6 +4241,8 @@ void br_multicast_toggle_one_vlan(struct net_bridge_vlan *vlan, bool on)
 
 		spin_lock_bh(&br->multicast_lock);
 		vlan->priv_flags ^= BR_VLFLAG_MCAST_ENABLED;
+		printk(KERN_WARNING "flags & MCAST %d\n",
+		       vlan->priv_flags & BR_VLFLAG_MCAST_ENABLED);
 		spin_unlock_bh(&br->multicast_lock);
 
 		if (on)
@@ -4234,6 +4252,7 @@ void br_multicast_toggle_one_vlan(struct net_bridge_vlan *vlan, bool on)
 	} else {
 		struct net_bridge_mcast *brmctx;
 
+		printk(KERN_WARNING "toggle port\n");
 		brmctx = br_multicast_port_ctx_get_global(&vlan->port_mcast_ctx);
 		if (on && br_multicast_ctx_vlan_global_disabled(brmctx))
 			return;
@@ -4241,6 +4260,8 @@ void br_multicast_toggle_one_vlan(struct net_bridge_vlan *vlan, bool on)
 		br = vlan->port->br;
 		spin_lock_bh(&br->multicast_lock);
 		vlan->priv_flags ^= BR_VLFLAG_MCAST_ENABLED;
+		printk(KERN_WARNING "flags & MCAST %d\n",
+		       vlan->priv_flags & BR_VLFLAG_MCAST_ENABLED);
 		if (on)
 			__br_multicast_enable_port_ctx(&vlan->port_mcast_ctx);
 		else
