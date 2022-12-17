@@ -1693,10 +1693,46 @@ hw_stats_monitor_test()
 	log_test "${type}_stats notifications"
 }
 
+ipv4_to_bytes()
+{
+	local IP=$1; shift
+
+	printf '%02x:' ${IP//./ } |
+	    sed 's/:$//'
+}
+
+expand_ipv6()
+{
+	local IP=$1; shift
+	local bytesep=$1; shift
+
+	local ndc=${IP/::/_}	# no-double-colon
+	local sco=${ndc//[^:]/}	# single-colons-only
+	local all=:::::::
+	# IP where :: -> the appropriate number of colons:
+	local ndc_ip=${ndc/_/${all:${#sco}}}
+
+	echo $ndc_ip | tr : '\n' |
+	    sed s/^/0000/ |
+	    sed 's/.*\(..\)\(..\)/\1'$bytesep'\2/' |
+	    tr '\n' : |
+	    sed 's/:$//'
+}
+
+ipv6_to_bytes()
+{
+	local IP=$1; shift
+
+	expand_ipv6 "$IP" :
+}
+
 igmpv3_is_in_get()
 {
+	local IP=$1; shift
+
 	local igmpv3
 
+	# IS_IN ( $IP )
 	igmpv3=$(:
 		)"22:"$(			: Type - Membership Report
 		)"00:"$(			: Reserved
@@ -1706,8 +1742,8 @@ igmpv3_is_in_get()
 		)"01:"$(			: Record Type - IS_IN
 		)"00:"$(			: Aux Data Len
 		)"00:01:"$(			: Number of Sources
-		)"ef:01:01:01:"$(		: Multicast Address - 239.1.1.1
-		)"c0:00:02:02"$(		: Source Address - 192.0.2.2
+		)"$(ipv4_to_bytes 239.1.1.1):"$(: Multicast Address
+		)"$(ipv4_to_bytes $IP)"$(	: Source Address
 		)
 
 	echo $igmpv3
@@ -1715,6 +1751,8 @@ igmpv3_is_in_get()
 
 mldv2_is_in_get()
 {
+	local IP=$1; shift
+
 	local hbh
 	local icmpv6
 
@@ -1733,10 +1771,8 @@ mldv2_is_in_get()
 		)"01:"$(			: Record Type - IS_IN
 		)"00:"$(			: Aux Data Len
 		)"00:01:"$(			: Number of Sources
-		)"ff:0e:00:00:00:00:00:00:"$(	: Multicast address - ff0e::1
-		)"00:00:00:00:00:00:00:01:"$(	:
-		)"20:01:0d:b8:00:01:00:00:"$(	: Source Address - 2001:db8:1::2
-		)"00:00:00:00:00:00:00:02:"$(	:
+		)"$(ipv6_to_bytes ff0e::1):"$(	: Multicast address - ff0e::1
+		)"$(ipv6_to_bytes $IP):"$(	: Source Address - 2001:db8:1::2
 		)
 
 	echo ${hbh}${icmpv6}

@@ -1020,6 +1020,8 @@ fwd_test()
 
 ctrl_igmpv3_is_in_test()
 {
+	local IP=192.0.2.2
+
 	RET=0
 
 	# Add a permanent entry and check that it is not affected by the
@@ -1027,11 +1029,11 @@ ctrl_igmpv3_is_in_test()
 	bridge mdb add dev br0 port $swp1 grp 239.1.1.1 permanent vid 10 \
 		filter_mode include source_list 192.0.2.1
 
-	# IS_IN ( 192.0.2.2 )
+	# IS_IN ( $IP )
 	$MZ $h1.10 -c 1 -A 192.0.2.1 -B 239.1.1.1 \
-		-t ip proto=2,p=$(igmpv3_is_in_get) -q
+		-t ip proto=2,p=$(igmpv3_is_in_get $IP) -q
 
-	bridge -d mdb show dev br0 vid 10 | grep 239.1.1.1 | grep -q 192.0.2.2
+	bridge -d mdb show dev br0 vid 10 | grep 239.1.1.1 | grep -q $IP
 	check_fail $? "Permanent entry affected by IGMP packet"
 
 	# Replace the permanent entry with a temporary one and check that after
@@ -1040,16 +1042,16 @@ ctrl_igmpv3_is_in_test()
 	bridge mdb replace dev br0 port $swp1 grp 239.1.1.1 temp vid 10 \
 		filter_mode include source_list 192.0.2.1
 
-	# IS_IN ( 192.0.2.2 )
+	# IS_IN ( $IP )
 	$MZ $h1.10 -c 1 -A 192.0.2.1 -B 239.1.1.1 \
-		-t ip proto=2,p=$(igmpv3_is_in_get) -q
+		-t ip proto=2,p=$(igmpv3_is_in_get $IP) -q
 
 	bridge -d mdb show dev br0 vid 10 | grep 239.1.1.1 | grep -v "src" | \
-		grep -q 192.0.2.2
+		grep -q $IP
 	check_err $? "Source not add to source list"
 
 	bridge -d mdb show dev br0 vid 10 | grep 239.1.1.1 | \
-		grep -q "src 192.0.2.2"
+		grep -q "src $IP"
 	check_err $? "(S, G) entry not created for new source"
 
 	bridge mdb del dev br0 port $swp1 grp 239.1.1.1 vid 10
@@ -1059,6 +1061,8 @@ ctrl_igmpv3_is_in_test()
 
 ctrl_mldv2_is_in_test()
 {
+	local IP=2001:db8:1::2
+
 	RET=0
 
 	# Add a permanent entry and check that it is not affected by the
@@ -1066,12 +1070,12 @@ ctrl_mldv2_is_in_test()
 	bridge mdb add dev br0 port $swp1 grp ff0e::1 permanent vid 10 \
 		filter_mode include source_list 2001:db8:1::1
 
-	# IS_IN ( 2001:db8:1::2 )
+	# IS_IN ( $IP )
 	$MZ -6 $h1.10 -c 1 -A fe80::1 -B ff0e::1 \
-		-t ip hop=1,next=0,p=$(mldv2_is_in_get) -q
+		-t ip hop=1,next=0,p=$(mldv2_is_in_get $IP) -q
 
 	bridge -d mdb show dev br0 vid 10 | grep ff0e::1 | \
-		grep -q 2001:db8:1::2
+		grep -q $IP
 	check_fail $? "Permanent entry affected by MLD packet"
 
 	# Replace the permanent entry with a temporary one and check that after
@@ -1080,16 +1084,16 @@ ctrl_mldv2_is_in_test()
 	bridge mdb replace dev br0 port $swp1 grp ff0e::1 temp vid 10 \
 		filter_mode include source_list 2001:db8:1::1
 
-	# IS_IN ( 2001:db8:1::2 )
+	# IS_IN ( $IP )
 	$MZ -6 $h1.10 -c 1 -A fe80::1 -B ff0e::1 \
-		-t ip hop=1,next=0,p=$(mldv2_is_in_get) -q
+		-t ip hop=1,next=0,p=$(mldv2_is_in_get $IP) -q
 
 	bridge -d mdb show dev br0 vid 10 | grep ff0e::1 | grep -v "src" | \
-		grep -q 2001:db8:1::2
+		grep -q $IP
 	check_err $? "Source not add to source list"
 
 	bridge -d mdb show dev br0 vid 10 | grep ff0e::1 | \
-		grep -q "src 2001:db8:1::2"
+		grep -q "src $IP"
 	check_err $? "(S, G) entry not created for new source"
 
 	bridge mdb del dev br0 port $swp1 grp ff0e::1 vid 10
