@@ -1229,6 +1229,7 @@ static int dcbnl_ieee_fill(struct sk_buff *skb, struct net_device *netdev)
 			err = nla_put(skb, type, sizeof(itr->app), &itr->app);
 			if (err) {
 				spin_unlock_bh(&dcb_lock);
+				nla_nest_cancel(skb, app);
 				return -EMSGSIZE;
 			}
 		}
