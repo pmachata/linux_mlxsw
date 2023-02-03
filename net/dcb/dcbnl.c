@@ -1011,13 +1011,12 @@ static int dcbnl_build_peer_app(struct net_device *netdev, struct sk_buff* skb,
 				int app_entry_type)
 {
 	struct dcb_peer_app_info info;
-	struct dcb_app *table = NULL;
 	const struct dcbnl_rtnl_ops *ops = netdev->dcbnl_ops;
+	struct dcb_app *table;
 	struct nlattr *app;
 	u16 app_count;
 	int err;
 	u16 i;
-
 
 	/**
 	 * retrieve the peer app configuration form the driver. If the driver
@@ -1036,30 +1035,27 @@ static int dcbnl_build_peer_app(struct net_device *netdev, struct sk_buff* skb,
 	if (err)
 		goto free_out;
 
-	/**
-	 * build the message, from here on the only possible failure
-	 * is due to the skb size
-	 */
-	err = -EMSGSIZE;
-
 	app = nla_nest_start_noflag(skb, app_nested_type);
 	if (!app)
-		goto nla_put_failure;
+		goto free_out;
 
-	if (app_info_type &&
-	    nla_put(skb, app_info_type, sizeof(info), &info))
+	if (app_info_type) {
+	    err = nla_put(skb, app_info_type, sizeof(info), &info);
+	    if (err)
 		goto nla_put_failure;
+	}
 
 	for (i = 0; i < app_count; i++) {
-		if (nla_put(skb, app_entry_type, sizeof(struct dcb_app),
-			    &table[i]))
+		err = nla_put(skb, app_entry_type, sizeof(struct dcb_app),
+			      &table[i]);
+		if (err)
 			goto nla_put_failure;
 	}
 	nla_nest_end(skb, app);
-
-	err = 0;
+	goto free_out;
 
 nla_put_failure:
+	nla_nest_cancel(skb, app);
 free_out:
 	kfree(table);
 	return err;
