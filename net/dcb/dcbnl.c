@@ -1342,8 +1342,10 @@ static int dcbnl_cee_pg_fill(struct sk_buff *skb, struct net_device *dev,
 		if (nla_put_u8(skb, DCB_TC_ATTR_PARAM_PGID, pgid) ||
 		    nla_put_u8(skb, DCB_TC_ATTR_PARAM_UP_MAPPING, up_map) ||
 		    nla_put_u8(skb, DCB_TC_ATTR_PARAM_STRICT_PRIO, prio) ||
-		    nla_put_u8(skb, DCB_TC_ATTR_PARAM_BW_PCT, tc_pct))
+		    nla_put_u8(skb, DCB_TC_ATTR_PARAM_BW_PCT, tc_pct)) {
+			nla_nest_cancel(skb, tc_nest);
 			return -EMSGSIZE;
+		}
 		nla_nest_end(skb, tc_nest);
 	}
 
