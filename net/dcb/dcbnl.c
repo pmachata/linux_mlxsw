@@ -392,8 +392,10 @@ static int dcbnl_getnumtcs(struct net_device *netdev, struct nlmsghdr *nlh,
 				nla_nest_cancel(skb, nest);
 				return ret;
 			}
-		} else
+		} else {
+			nla_nest_cancel(skb, nest);
 			return -EINVAL;
+		}
 	}
 	nla_nest_end(skb, nest);
 
