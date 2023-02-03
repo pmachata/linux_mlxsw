@@ -1365,14 +1365,15 @@ static int dcbnl_cee_fill(struct sk_buff *skb, struct net_device *netdev)
 	struct nlattr *cee, *app;
 	struct dcb_app_type *itr;
 	const struct dcbnl_rtnl_ops *ops = netdev->dcbnl_ops;
-	int dcbx, i, err = -EMSGSIZE;
+	int dcbx, i, err;
 	u8 value;
 
 	if (nla_put_string(skb, DCB_ATTR_IFNAME, netdev->name))
-		goto nla_put_failure;
+		return -EMSGSIZE;
+
 	cee = nla_nest_start_noflag(skb, DCB_ATTR_CEE);
 	if (!cee)
-		goto nla_put_failure;
+		return -EMSGSIZE;
 
 	/* local pg */
 	if (ops->getpgtccfgtx && ops->getpgbwgcfgtx) {
@@ -1492,15 +1493,15 @@ static int dcbnl_cee_fill(struct sk_buff *skb, struct net_device *netdev)
 	if (dcbx >= 0) {
 		err = nla_put_u8(skb, DCB_ATTR_DCBX, dcbx);
 		if (err)
-			goto nla_put_failure;
+			return -EMSGSIZE;
 	}
 	return 0;
 
 dcb_unlock:
 	spin_unlock_bh(&dcb_lock);
 nla_put_failure:
-	err = -EMSGSIZE;
-	return err;
+	nla_nest_end(skb, cee);
+	return -EMSGSIZE;
 }
 
 static int dcbnl_notify(struct net_device *dev, int event, int cmd,
