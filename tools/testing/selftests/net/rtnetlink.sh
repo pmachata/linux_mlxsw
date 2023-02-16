@@ -4,6 +4,30 @@
 #
 # set -e
 
+ALL_TESTS="
+	kci_test_polrouting
+	kci_test_route_get
+	kci_test_addrlft
+	kci_test_promote_secondaries
+	kci_test_tc
+	kci_test_gre
+	kci_test_gretap
+	kci_test_ip6gretap
+	kci_test_erspan
+	kci_test_ip6erspan
+	kci_test_bridge
+	kci_test_addrlabel
+	kci_test_ifalias
+	kci_test_vrf
+	kci_test_encap
+	kci_test_macsec
+	kci_test_ipsec
+	kci_test_ipsec_offload
+	kci_test_fdb_get
+	kci_test_neigh_get
+	kci_test_bridge_parent_id
+"
+
 devdummy="test-dummy0"
 
 # Kselftest framework requirement - SKIP code is 4.
@@ -1227,55 +1251,19 @@ kci_test_bridge_parent_id()
 
 kci_test_rtnl()
 {
+	local current_test
 	local ret=0
+
 	kci_add_dummy
 	if [ $ret -ne 0 ];then
 		echo "FAIL: cannot add dummy interface"
 		return 1
 	fi
 
-	kci_test_polrouting
-	check_err $?
-	kci_test_route_get
-	check_err $?
-	kci_test_addrlft
-	check_err $?
-	kci_test_promote_secondaries
-	check_err $?
-	kci_test_tc
-	check_err $?
-	kci_test_gre
-	check_err $?
-	kci_test_gretap
-	check_err $?
-	kci_test_ip6gretap
-	check_err $?
-	kci_test_erspan
-	check_err $?
-	kci_test_ip6erspan
-	check_err $?
-	kci_test_bridge
-	check_err $?
-	kci_test_addrlabel
-	check_err $?
-	kci_test_ifalias
-	check_err $?
-	kci_test_vrf
-	check_err $?
-	kci_test_encap
-	check_err $?
-	kci_test_macsec
-	check_err $?
-	kci_test_ipsec
-	check_err $?
-	kci_test_ipsec_offload
-	check_err $?
-	kci_test_fdb_get
-	check_err $?
-	kci_test_neigh_get
-	check_err $?
-	kci_test_bridge_parent_id
-	check_err $?
+	for current_test in ${TESTS:-$ALL_TESTS}; do
+		$current_test
+		check_err $?
+	done
 
 	kci_del_dummy
 	return $ret
