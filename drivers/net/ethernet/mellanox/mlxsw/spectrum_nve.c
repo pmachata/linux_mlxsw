@@ -985,6 +985,7 @@ void mlxsw_sp_nve_fid_disable(struct mlxsw_sp *mlxsw_sp,
 			      struct mlxsw_sp_fid *fid)
 {
 	u16 fid_index = mlxsw_sp_fid_index(fid);
+	netdevice_tracker dev_tracker = {};
 	struct net_device *nve_dev;
 	int nve_ifindex;
 	__be32 vni;
@@ -1000,11 +1001,12 @@ void mlxsw_sp_nve_fid_disable(struct mlxsw_sp *mlxsw_sp,
 	nve_dev = dev_get_by_index(mlxsw_sp_net(mlxsw_sp), nve_ifindex);
 	if (!nve_dev)
 		goto out;
+	netdev_tracker_alloc(nve_dev, &dev_tracker, GFP_KERNEL);
 
 	mlxsw_sp_nve_fdb_clear_offload(mlxsw_sp, fid, nve_dev, vni);
 	mlxsw_sp_fid_fdb_clear_offload(fid, nve_dev);
 
-	dev_put(nve_dev);
+	netdev_put(nve_dev, &dev_tracker);
 
 out:
 	mlxsw_sp_fid_vni_clear(fid);
