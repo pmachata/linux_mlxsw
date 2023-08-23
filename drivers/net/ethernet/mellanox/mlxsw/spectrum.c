@@ -2692,6 +2692,57 @@ static void mlxsw_sp_traps_fini(struct mlxsw_sp *mlxsw_sp)
 	kfree(mlxsw_sp->trap);
 }
 
+static int mlxsw_sp_lag_pgt_init(struct mlxsw_sp *mlxsw_sp)
+{
+	char sgcr_pl[MLXSW_REG_SGCR_LEN];
+	u16 lag_pgt_base;
+	u16 max_lag;
+	int err;
+
+	if (mlxsw_core_lag_mode(mlxsw_sp->core) !=
+	    MLXSW_CMD_MBOX_CONFIG_PROFILE_LAG_MODE_SW)
+		return 0;
+
+	err = mlxsw_core_max_lag(mlxsw_sp->core, &max_lag);
+	if (err)
+		return err;
+
+	/* In DDD mode, which we by default use, each LAG entry is 8 PGT
+	 * entries. The LAG table address needs to be 8-aligned, so overallocate
+	 * and align the returned address.
+	 */
+	err = mlxsw_sp_pgt_mid_alloc_range(mlxsw_sp, &mlxsw_sp->lag_pgt_block,
+					   max_lag * 8 + 7);
+	if (err)
+		return err;
+
+	lag_pgt_base = mlxsw_sp->lag_pgt_block + (-mlxsw_sp->lag_pgt_block & 7);
+
+	mlxsw_reg_sgcr_pack(sgcr_pl, lag_pgt_base);
+	err = mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(sgcr), sgcr_pl);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+static void mlxsw_sp_lag_pgt_fini(struct mlxsw_sp *mlxsw_sp)
+{
+	u16 max_lag;
+	int err;
+
+	if (mlxsw_core_lag_mode(mlxsw_sp->core) !=
+	    MLXSW_CMD_MBOX_CONFIG_PROFILE_LAG_MODE_SW)
+		return;
+
+	err = mlxsw_core_max_lag(mlxsw_sp->core, &max_lag);
+	if (err)
+		return;
+
+	mlxsw_sp_pgt_mid_free_range(mlxsw_sp, mlxsw_sp->lag_pgt_block,
+				    max_lag * 8 + 7);
+}
+
 #define MLXSW_SP_LAG_SEED_INIT 0xcafecafe
 
 static int mlxsw_sp_lag_init(struct mlxsw_sp *mlxsw_sp)
@@ -2723,16 +2774,27 @@ static int mlxsw_sp_lag_init(struct mlxsw_sp *mlxsw_sp)
 	if (!MLXSW_CORE_RES_VALID(mlxsw_sp->core, MAX_LAG_MEMBERS))
 		return -EIO;
 
+	err = mlxsw_sp_lag_pgt_init(mlxsw_sp);
+	if (err)
+		return err;
+
 	mlxsw_sp->lags = kcalloc(max_lag, sizeof(struct mlxsw_sp_upper),
 				 GFP_KERNEL);
-	if (!mlxsw_sp->lags)
-		return -ENOMEM;
+	if (!mlxsw_sp->lags) {
+		err = -ENOMEM;
+		goto err_kcalloc;
+	}
 
 	return 0;
+
+err_kcalloc:
+	mlxsw_sp_lag_pgt_fini(mlxsw_sp);
+	return err;
 }
 
 static void mlxsw_sp_lag_fini(struct mlxsw_sp *mlxsw_sp)
 {
+	mlxsw_sp_lag_pgt_fini(mlxsw_sp);
 	kfree(mlxsw_sp->lags);
 }
 
