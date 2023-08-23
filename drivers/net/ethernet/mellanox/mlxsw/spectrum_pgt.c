@@ -321,6 +321,7 @@ int mlxsw_sp_pgt_init(struct mlxsw_sp *mlxsw_sp)
 
 	idr_init(&pgt->pgt_idr);
 	pgt->end_index = MLXSW_CORE_RES_GET(mlxsw_sp->core, PGT_SIZE);
+	printk(KERN_WARNING "pgt->end_index %x\n", pgt->end_index);
 	mutex_init(&pgt->lock);
 	pgt->smpe_index_valid = mlxsw_sp->pgt_smpe_index_valid;
 	mlxsw_sp->pgt = pgt;

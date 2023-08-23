@@ -1701,6 +1701,10 @@ mlxsw_sp_fid_flood_tables_init(struct mlxsw_sp_fid_family *fid_family)
 	if (err)
 		return err;
 
+	printk(KERN_WARNING "FID family: type %d D %d Q %d pgt_size %d pgt_base %x\n",
+	       fid_family->type, MLXSW_SP_FID_TYPE_8021D, MLXSW_SP_FID_TYPE_8021Q,
+	       pgt_size, fid_family->pgt_base);
+
 	for (i = 0; i < fid_family->nr_flood_tables; i++) {
 		const struct mlxsw_sp_flood_table *flood_table;
 		int err;

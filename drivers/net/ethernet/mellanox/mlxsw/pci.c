@@ -1323,8 +1323,14 @@ static int mlxsw_pci_config_profile(struct mlxsw_pci *mlxsw_pci, char *mbox,
 		mlxsw_cmd_mbox_config_profile_set_lag_mode_set(mbox, 1);
 		mlxsw_cmd_mbox_config_profile_lag_mode_set(mbox, lag_mode);
 		mlxsw_pci->lag_mode = lag_mode;
+
+		printk(KERN_WARNING "lag_mode_support %d lag_mode %d\n",
+		       mlxsw_pci->lag_mode_support, mlxsw_pci->lag_mode);
 	} else {
 		mlxsw_pci->lag_mode = MLXSW_CMD_MBOX_CONFIG_PROFILE_LAG_MODE_FW;
+
+		printk(KERN_WARNING "lag_mode_support %d lag_mode assumed %d\n",
+		       mlxsw_pci->lag_mode_support, mlxsw_pci->lag_mode);
 	}
 
 	if (profile->flood_mode_prefer_cff && mlxsw_pci->cff_support) {
@@ -1334,8 +1340,14 @@ static int mlxsw_pci_config_profile(struct mlxsw_pci *mlxsw_pci, char *mbox,
 		mlxsw_cmd_mbox_config_profile_set_flood_mode_set(mbox, 1);
 		mlxsw_cmd_mbox_config_profile_flood_mode_set(mbox, flood_mode);
 		mlxsw_pci->flood_mode = flood_mode;
+
+		printk(KERN_WARNING "cff_support %d flood_mode %d\n",
+		       mlxsw_pci->cff_support, mlxsw_pci->flood_mode);
 	} else if (profile->used_flood_mode) {
 		mlxsw_pci->flood_mode = profile->flood_mode;
+
+		printk(KERN_WARNING "cff_support %d flood_mode %d (fallback)\n",
+		       mlxsw_pci->cff_support, mlxsw_pci->flood_mode);
 	} else {
 		// xxx vs. minimal? Can minimal use PCI?
 		WARN_ON(1);
@@ -1621,6 +1633,8 @@ static int mlxsw_pci_init(void *bus_priv, struct mlxsw_core *mlxsw_core,
 		mlxsw_cmd_mbox_query_fw_lag_mode_support_get(mbox);
 	mlxsw_pci->cff_support =
 		mlxsw_cmd_mbox_query_fw_cff_support_get(mbox);
+	printk(KERN_WARNING "lag_mode_support %d cff_support %d\n",
+	       mlxsw_pci->lag_mode_support, mlxsw_pci->cff_support);
 
 	num_pages = mlxsw_cmd_mbox_query_fw_fw_pages_get(mbox);
 	err = mlxsw_pci_fw_area_init(mlxsw_pci, mbox, num_pages);

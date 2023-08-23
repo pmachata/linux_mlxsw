@@ -2717,6 +2717,8 @@ static int mlxsw_sp_lag_pgt_init(struct mlxsw_sp *mlxsw_sp)
 		return err;
 
 	lag_pgt_base = mlxsw_sp->lag_pgt_block + (-mlxsw_sp->lag_pgt_block & 7);
+	printk(KERN_WARNING "PGT block at %x, aligned to %x\n",
+	       mlxsw_sp->lag_pgt_block, lag_pgt_base);
 
 	mlxsw_reg_sgcr_pack(sgcr_pl, lag_pgt_base);
 	err = mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(sgcr), sgcr_pl);
