@@ -57,6 +57,7 @@ enum mlxsw_res_id {
 	MLXSW_RES_ID_MAX_LPM_TREES,
 	MLXSW_RES_ID_MAX_NVE_MC_ENTRIES_IPV4,
 	MLXSW_RES_ID_MAX_NVE_MC_ENTRIES_IPV6,
+	MLXSW_RES_ID_MAX_NVE_FLOOD_PRF,
 
 	/* Internal resources.
 	 * Determined by the SW, not queried from the HW.
@@ -118,6 +119,7 @@ static u16 mlxsw_res_ids[] = {
 	[MLXSW_RES_ID_MAX_LPM_TREES] = 0x2C30,
 	[MLXSW_RES_ID_MAX_NVE_MC_ENTRIES_IPV4] = 0x2E02,
 	[MLXSW_RES_ID_MAX_NVE_MC_ENTRIES_IPV6] = 0x2E03,
+	[MLXSW_RES_ID_MAX_NVE_FLOOD_PRF] = 0x2522,
 };
 
 struct mlxsw_res {
