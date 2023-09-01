@@ -1328,7 +1328,14 @@ static int mlxsw_pci_config_profile(struct mlxsw_pci *mlxsw_pci, char *mbox,
 		mlxsw_pci->lag_mode = MLXSW_CMD_MBOX_CONFIG_PROFILE_LAG_MODE_FW;
 	}
 
-	if (profile->used_flood_mode) {
+	if (profile->flood_mode_prefer_cff && mlxsw_pci->cff_support) {
+		enum mlxsw_cmd_mbox_config_profile_flood_mode flood_mode =
+			MLXSW_CMD_MBOX_CONFIG_PROFILE_FLOOD_MODE_CFF;
+
+		mlxsw_cmd_mbox_config_profile_set_flood_mode_set(mbox, 1);
+		mlxsw_cmd_mbox_config_profile_flood_mode_set(mbox, flood_mode);
+		mlxsw_pci->flood_mode = flood_mode;
+	} else if (profile->used_flood_mode) {
 		mlxsw_pci->flood_mode = profile->flood_mode;
 	} else {
 		// xxx vs. minimal? Can minimal use PCI?
