@@ -1944,6 +1944,16 @@ MLXSW_ITEM32(reg, sfmr, irif_v, 0x14, 24, 1);
  */
 MLXSW_ITEM32(reg, sfmr, irif, 0x14, 0, 16);
 
+/* reg_sfmr_cff_mid_base
+ * Pointer to PGT table.
+ * Range: 0..(cap_max_pgt-1)
+ * Access: RW
+ *
+ * Note: Reserved when SwitchX/-2 and Spectrum-1.
+ * Supported when CONFIG_PROFILE.flood_mode = CFF.
+ */
+MLXSW_ITEM32(reg, sfmr, cff_mid_base, 0x20, 0, 16);
+
 /* reg_sfmr_nve_flood_prf_id
  * FID flooding profile_id for NVE Encap
  * Range 0..(max_cap_nve_flood_prf-1)
@@ -1952,6 +1962,16 @@ MLXSW_ITEM32(reg, sfmr, irif, 0x14, 0, 16);
  * Note: Reserved when SwitchX/-2 and Spectrum-1
  */
 MLXSW_ITEM32(reg, sfmr, nve_flood_prf_id, 0x24, 8, 2);
+
+/* reg_sfmr_cff_prf_id
+ * Compressed Fid Flooding profile_id
+ * Range 0..max_cap_nve_flood_prf - 1
+ * Access: RW
+ *
+ * Note: Reserved when SwitchX/-2 and Spectrum-1
+ * Supported only when CONFIG_PROFLE.flood_mode = CFF.
+ */
+MLXSW_ITEM32(reg, sfmr, cff_prf_id, 0x24, 0, 2);
 
 /* reg_sfmr_smpe_valid
  * SMPE is valid.
@@ -1986,6 +2006,23 @@ mlxsw_reg_sfmr_pack_ctl(char *payload, enum mlxsw_reg_sfmr_op op, u16 fid,
 	mlxsw_reg_sfmr_vv_set(payload, false);
 	mlxsw_reg_sfmr_flood_rsp_set(payload, flood_rsp);
 	mlxsw_reg_sfmr_flood_bridge_type_set(payload, bridge_type);
+	mlxsw_reg_sfmr_nve_flood_prf_id_set(payload, nve_flood_profile_id);
+	mlxsw_reg_sfmr_smpe_valid_set(payload, smpe_valid);
+	mlxsw_reg_sfmr_smpe_set(payload, smpe);
+}
+
+static inline void
+mlxsw_reg_sfmr_pack_cff(char *payload, enum mlxsw_reg_sfmr_op op, u16 fid,
+			u16 cff_mid_base, u8 profile_id, u8 nve_flood_profile_id,
+			bool smpe_valid, u16 smpe)
+{
+	MLXSW_REG_ZERO(sfmr, payload);
+	mlxsw_reg_sfmr_op_set(payload, op);
+	mlxsw_reg_sfmr_fid_set(payload, fid);
+	mlxsw_reg_sfmr_cff_mid_base_set(payload, cff_mid_base);
+	mlxsw_reg_sfmr_cff_prf_id_set(payload, profile_id);
+	mlxsw_reg_sfmr_vtfp_set(payload, false);
+	mlxsw_reg_sfmr_vv_set(payload, false);
 	mlxsw_reg_sfmr_nve_flood_prf_id_set(payload, nve_flood_profile_id);
 	mlxsw_reg_sfmr_smpe_valid_set(payload, smpe_valid);
 	mlxsw_reg_sfmr_smpe_set(payload, smpe);
