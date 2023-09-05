@@ -1969,6 +1969,7 @@ MLXSW_ITEM32(reg, sfmr, smpe, 0x28, 0, 16);
 static inline void mlxsw_reg_sfmr_pack(char *payload,
 				       enum mlxsw_reg_sfmr_op op, u16 fid,
 				       u16 fid_offset, bool flood_rsp,
+				       u8 nve_flood_profile_id,
 				       enum mlxsw_reg_bridge_type bridge_type,
 				       bool smpe_valid, u16 smpe)
 {
@@ -1980,6 +1981,7 @@ static inline void mlxsw_reg_sfmr_pack(char *payload,
 	mlxsw_reg_sfmr_vv_set(payload, false);
 	mlxsw_reg_sfmr_flood_rsp_set(payload, flood_rsp);
 	mlxsw_reg_sfmr_flood_bridge_type_set(payload, bridge_type);
+	mlxsw_reg_sfmr_nve_flood_prf_id_set(payload, nve_flood_profile_id);
 	mlxsw_reg_sfmr_smpe_valid_set(payload, smpe_valid);
 	mlxsw_reg_sfmr_smpe_set(payload, smpe);
 }
