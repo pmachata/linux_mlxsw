@@ -428,19 +428,26 @@ static enum mlxsw_reg_sfmr_op mlxsw_sp_sfmr_op(bool valid)
 		       MLXSW_REG_SFMR_OP_DESTROY_FID;
 }
 
-static int mlxsw_sp_fid_op(const struct mlxsw_sp_fid *fid, bool valid)
+static void mlxsw_sp_fid_pack_ctl(char *sfmr_pl,
+				  const struct mlxsw_sp_fid *fid,
+				  enum mlxsw_reg_sfmr_op op)
 {
-	struct mlxsw_sp *mlxsw_sp = fid->fid_family->mlxsw_sp;
-	char sfmr_pl[MLXSW_REG_SFMR_LEN];
 	u16 smpe;
 
 	smpe = fid->fid_family->smpe_index_valid ? fid->fid_index : 0;
-
-	mlxsw_reg_sfmr_pack_ctl(sfmr_pl, mlxsw_sp_sfmr_op(valid), fid->fid_index,
+	mlxsw_reg_sfmr_pack_ctl(sfmr_pl, op, fid->fid_index,
 				fid->fid_offset, fid->fid_family->flood_rsp,
 				MLXSW_SP_FID_FLOOD_PROFILE_NVE,
 				fid->fid_family->bridge_type,
 				fid->fid_family->smpe_index_valid, smpe);
+}
+
+static int mlxsw_sp_fid_op(const struct mlxsw_sp_fid *fid, bool valid)
+{
+	struct mlxsw_sp *mlxsw_sp = fid->fid_family->mlxsw_sp;
+	char sfmr_pl[MLXSW_REG_SFMR_LEN];
+
+	mlxsw_sp_fid_pack_ctl(sfmr_pl, fid, mlxsw_sp_sfmr_op(valid));
 	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(sfmr), sfmr_pl);
 }
 
@@ -449,16 +456,8 @@ static int mlxsw_sp_fid_edit_op(const struct mlxsw_sp_fid *fid,
 {
 	struct mlxsw_sp *mlxsw_sp = fid->fid_family->mlxsw_sp;
 	char sfmr_pl[MLXSW_REG_SFMR_LEN];
-	u16 smpe;
 
-	smpe = fid->fid_family->smpe_index_valid ? fid->fid_index : 0;
-
-	mlxsw_reg_sfmr_pack_ctl(sfmr_pl, MLXSW_REG_SFMR_OP_CREATE_FID,
-				fid->fid_index, fid->fid_offset,
-				fid->fid_family->flood_rsp,
-				MLXSW_SP_FID_FLOOD_PROFILE_NVE,
-				fid->fid_family->bridge_type,
-				fid->fid_family->smpe_index_valid, smpe);
+	mlxsw_sp_fid_pack_ctl(sfmr_pl, fid, MLXSW_REG_SFMR_OP_CREATE_FID);
 	mlxsw_reg_sfmr_vv_set(sfmr_pl, fid->vni_valid);
 	mlxsw_reg_sfmr_vni_set(sfmr_pl, be32_to_cpu(fid->vni));
 	mlxsw_reg_sfmr_vtfp_set(sfmr_pl, fid->nve_flood_index_valid);
