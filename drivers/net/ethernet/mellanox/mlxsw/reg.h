@@ -1938,6 +1938,15 @@ MLXSW_ITEM32(reg, sfmr, irif_v, 0x14, 24, 1);
  */
 MLXSW_ITEM32(reg, sfmr, irif, 0x14, 0, 16);
 
+/* reg_sfmr_nve_flood_prf_id
+ * FID flooding profile_id for NVE Encap
+ * Range 0..(max_cap_nve_flood_prf-1)
+ * Access: RW
+ *
+ * Note: Reserved when SwitchX/-2 and Spectrum-1
+ */
+MLXSW_ITEM32(reg, sfmr, nve_flood_prf_id, 0x24, 8, 2);
+
 /* reg_sfmr_smpe_valid
  * SMPE is valid.
  * Access: RW
