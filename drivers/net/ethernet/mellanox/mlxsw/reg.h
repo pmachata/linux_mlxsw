@@ -1872,6 +1872,7 @@ MLXSW_ITEM32(reg, sfmr, flood_rsp, 0x08, 31, 1);
  * Access: RW
  *
  * Note: Reserved when legacy bridge model is used and when flood_rsp=1.
+ * Reserved when CONFIG_PROFILE.flood_mode = CFF
  */
 MLXSW_ITEM32(reg, sfmr, flood_bridge_type, 0x08, 28, 1);
 
@@ -1880,6 +1881,8 @@ MLXSW_ITEM32(reg, sfmr, flood_bridge_type, 0x08, 28, 1);
  * Used to point into the flooding table selected by SFGC register if
  * the table is of type FID-Offset. Otherwise, this field is reserved.
  * Access: RW
+ *
+ * Note: Reserved when CONFIG_PROFILE.flood_mode = CFF
  */
 MLXSW_ITEM32(reg, sfmr, fid_offset, 0x08, 0, 16);
 
