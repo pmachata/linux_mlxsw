@@ -97,6 +97,10 @@ struct mlxsw_sp_fid_ops {
 				     const struct mlxsw_sp_rif *rif);
 };
 
+enum mlxsw_sp_fid_flood_profile {
+	MLXSW_SP_FID_FLOOD_PROFILE_NVE = 1,
+};
+
 struct mlxsw_sp_fid_family {
 	enum mlxsw_sp_fid_type type;
 	size_t fid_size;
@@ -434,6 +438,7 @@ static int mlxsw_sp_fid_op(const struct mlxsw_sp_fid *fid, bool valid)
 
 	mlxsw_reg_sfmr_pack(sfmr_pl, mlxsw_sp_sfmr_op(valid), fid->fid_index,
 			    fid->fid_offset, fid->fid_family->flood_rsp,
+			    MLXSW_SP_FID_FLOOD_PROFILE_NVE,
 			    fid->fid_family->bridge_type,
 			    fid->fid_family->smpe_index_valid, smpe);
 	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(sfmr), sfmr_pl);
@@ -451,6 +456,7 @@ static int mlxsw_sp_fid_edit_op(const struct mlxsw_sp_fid *fid,
 	mlxsw_reg_sfmr_pack(sfmr_pl, MLXSW_REG_SFMR_OP_CREATE_FID,
 			    fid->fid_index, fid->fid_offset,
 			    fid->fid_family->flood_rsp,
+			    MLXSW_SP_FID_FLOOD_PROFILE_NVE,
 			    fid->fid_family->bridge_type,
 			    fid->fid_family->smpe_index_valid, smpe);
 	mlxsw_reg_sfmr_vv_set(sfmr_pl, fid->vni_valid);
