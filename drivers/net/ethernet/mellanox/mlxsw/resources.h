@@ -58,7 +58,7 @@ enum mlxsw_res_id {
 	MLXSW_RES_ID_MAX_NVE_MC_ENTRIES_IPV4,
 	MLXSW_RES_ID_MAX_NVE_MC_ENTRIES_IPV6,
 	MLXSW_RES_ID_MAX_NVE_FLOOD_PRF,
-	MLXSW_RES_ID_MAX_SWITCH_PORTS,
+	MLXSW_RES_ID_MAX_SWITCH_PORTS, // can be dropped
 
 	/* Internal resources.
 	 * Determined by the SW, not queried from the HW.
