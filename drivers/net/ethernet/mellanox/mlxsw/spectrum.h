@@ -1323,7 +1323,9 @@ int mlxsw_sp_fids_init(struct mlxsw_sp *mlxsw_sp);
 void mlxsw_sp_fids_fini(struct mlxsw_sp *mlxsw_sp);
 
 extern const struct mlxsw_sp_fid_family *mlxsw_sp1_fid_family_arr[];
-extern const struct mlxsw_sp_fid_family *mlxsw_sp2_fid_family_arr[];
+
+const struct mlxsw_sp_fid_family **
+mlxsw_sp2_get_fid_family_arr(struct mlxsw_core *mlxsw_core);
 
 /* spectrum_mr.c */
 enum mlxsw_sp_mr_route_prio {

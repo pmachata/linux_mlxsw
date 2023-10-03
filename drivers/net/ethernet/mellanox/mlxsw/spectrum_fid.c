@@ -1524,12 +1524,24 @@ static const struct mlxsw_sp_fid_family mlxsw_sp2_fid_dummy_family = {
 	.smpe_index_valid       = false,
 };
 
-const struct mlxsw_sp_fid_family *mlxsw_sp2_fid_family_arr[] = {
+static const struct mlxsw_sp_fid_family *mlxsw_sp2_fid_family_arr[] = {
 	[MLXSW_SP_FID_TYPE_8021Q]	= &mlxsw_sp2_fid_8021q_family,
 	[MLXSW_SP_FID_TYPE_8021D]	= &mlxsw_sp2_fid_8021d_family,
 	[MLXSW_SP_FID_TYPE_DUMMY]	= &mlxsw_sp2_fid_dummy_family,
 	[MLXSW_SP_FID_TYPE_RFID]	= &mlxsw_sp_fid_rfid_family,
 };
+
+const struct mlxsw_sp_fid_family **
+mlxsw_sp2_get_fid_family_arr(struct mlxsw_core *mlxsw_core)
+{
+	switch (mlxsw_core_flood_mode(mlxsw_core)) {
+	default:
+		WARN_ON_ONCE(1);
+		fallthrough;
+	case MLXSW_CMD_MBOX_CONFIG_PROFILE_FLOOD_MODE_CONTROLLED:
+		return mlxsw_sp2_fid_family_arr;
+	}
+}
 
 static struct mlxsw_sp_fid *mlxsw_sp_fid_lookup(struct mlxsw_sp *mlxsw_sp,
 						enum mlxsw_sp_fid_type type,

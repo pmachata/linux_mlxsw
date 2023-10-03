@@ -3441,7 +3441,7 @@ static int mlxsw_sp2_init(struct mlxsw_core *mlxsw_core,
 	mlxsw_sp->router_ops = &mlxsw_sp2_router_ops;
 	mlxsw_sp->listeners = mlxsw_sp2_listener;
 	mlxsw_sp->listeners_count = ARRAY_SIZE(mlxsw_sp2_listener);
-	mlxsw_sp->fid_family_arr = mlxsw_sp2_fid_family_arr;
+	mlxsw_sp->fid_family_arr = mlxsw_sp2_get_fid_family_arr(mlxsw_core);
 	mlxsw_sp->lowest_shaper_bs = MLXSW_REG_QEEC_LOWEST_SHAPER_BS_SP2;
 	mlxsw_sp->pgt_smpe_index_valid = false;
 
@@ -3475,7 +3475,7 @@ static int mlxsw_sp3_init(struct mlxsw_core *mlxsw_core,
 	mlxsw_sp->router_ops = &mlxsw_sp2_router_ops;
 	mlxsw_sp->listeners = mlxsw_sp2_listener;
 	mlxsw_sp->listeners_count = ARRAY_SIZE(mlxsw_sp2_listener);
-	mlxsw_sp->fid_family_arr = mlxsw_sp2_fid_family_arr;
+	mlxsw_sp->fid_family_arr = mlxsw_sp2_get_fid_family_arr(mlxsw_core);
 	mlxsw_sp->lowest_shaper_bs = MLXSW_REG_QEEC_LOWEST_SHAPER_BS_SP3;
 	mlxsw_sp->pgt_smpe_index_valid = false;
 
@@ -3509,7 +3509,7 @@ static int mlxsw_sp4_init(struct mlxsw_core *mlxsw_core,
 	mlxsw_sp->router_ops = &mlxsw_sp2_router_ops;
 	mlxsw_sp->listeners = mlxsw_sp2_listener;
 	mlxsw_sp->listeners_count = ARRAY_SIZE(mlxsw_sp2_listener);
-	mlxsw_sp->fid_family_arr = mlxsw_sp2_fid_family_arr;
+	mlxsw_sp->fid_family_arr = mlxsw_sp2_get_fid_family_arr(mlxsw_core);
 	mlxsw_sp->lowest_shaper_bs = MLXSW_REG_QEEC_LOWEST_SHAPER_BS_SP4;
 	mlxsw_sp->pgt_smpe_index_valid = false;
 
