@@ -739,6 +739,10 @@ int mlxsw_sp_fid_rif_set(struct mlxsw_sp_fid *fid, struct mlxsw_sp_rif *rif)
 	u16 rif_index = mlxsw_sp_rif_index(rif);
 	int err;
 
+	printk(KERN_WARNING "set FID %d RIF\n", fid->fid_index);
+	// xxx rollback the assignment on failures
+	fid->rif = rif;
+
 	err = mlxsw_sp_fid_to_fid_rif_update(fid, rif);
 	if (err)
 		return err;
@@ -755,7 +759,6 @@ int mlxsw_sp_fid_rif_set(struct mlxsw_sp_fid *fid, struct mlxsw_sp_rif *rif)
 	if (err)
 		goto err_erif_eport_to_vid_map;
 
-	fid->rif = rif;
 	return 0;
 
 err_erif_eport_to_vid_map:
@@ -1130,9 +1133,6 @@ static int mlxsw_sp_fid_fid_mid_ctl(const struct mlxsw_sp_fid *fid,
 				const struct mlxsw_sp_flood_table *flood_table,
 				u16 *mid)
 {
-	printk(KERN_WARNING "FID %d table %d CTL algo\n",
-	       fid->fid_index, flood_table->table_index);
-
 	*mid = mlxsw_sp_fid_ctl_pgt_base(fid->fid_family, flood_table) +
 	       fid->fid_offset;
 	return 0;
@@ -1170,15 +1170,8 @@ mlxsw_sp_fid_bridge_fid_mid_cff(const struct mlxsw_sp_fid *fid,
 				const struct mlxsw_sp_flood_table *flood_table,
 				u16 *mid)
 {
-	printk(KERN_WARNING "FID %d table %d CFF algo\n",
-	       fid->fid_index, flood_table->table_index);
 	*mid = mlxsw_sp_fid_cff_pgt_base(fid->fid_family, fid->fid_offset) +
 	       flood_table->table_index;
-
-//	printk(KERN_WARNING "family base %#x ntables %d table %d fid %d -> PGT %#x\n",
-//	       fid->fid_family->pgt_base, fid->fid_family->nr_flood_tables,
-//	       flood_table->table_index, fid->fid_offset, *mid);
-
 	return 0;
 }
 
@@ -1407,9 +1400,6 @@ mlxsw_sp_fid_rfid_port_add_cff(struct mlxsw_sp *mlxsw_sp,
 {
 	int err;
 
-	//printk(KERN_WARNING "port add: flood table %d packet types %#x local_port %d pgt_addr %x\n",
-	//       flood_table->table_index, flood_table->packet_type, local_port, pgt_addr);
-
 	err = mlxsw_sp_pgt_entry_port_set(mlxsw_sp, pgt_addr, smpe,
 					  local_port, true);
 	if (err)
@@ -1423,6 +1413,8 @@ mlxsw_sp_fid_rfid_port_add_cff(struct mlxsw_sp *mlxsw_sp,
 			goto err_entry_port_set;
 	}
 
+	return 0;
+
 err_entry_port_set:
 	mlxsw_sp_pgt_entry_port_set(mlxsw_sp, pgt_addr, smpe, local_port, false);
 	return err;
@@ -1433,9 +1425,6 @@ mlxsw_sp_fid_rfid_port_del_cff(struct mlxsw_sp *mlxsw_sp,
 			       const struct mlxsw_sp_flood_table *flood_table,
 			       u16 pgt_addr, u16 smpe, u16 local_port)
 {
-	//printk(KERN_WARNING "port del: flood table %d packet types %#x local_port %d pgt_addr %x\n",
-	//       flood_table->table_index, flood_table->packet_type, local_port, pgt_addr);
-
 	if (flood_table->packet_type & MLXSW_SP_FLOOD_TYPE_NOT_UC)
 		mlxsw_sp_pgt_entry_port_set(mlxsw_sp, pgt_addr, smpe,
 					    mlxsw_sp_router_port(mlxsw_sp),
@@ -1554,8 +1543,6 @@ mlxsw_sp_fid_rfid_fid_mid_cff(const struct mlxsw_sp_fid *fid,
 		return err;
 
 	*mid = pgt_base + flood_table->table_index;
-	printk(KERN_WARNING "MID FID %d flood table %d -> %#x\n",
-	       fid->fid_index, flood_table->table_index, *mid);
 	return 0;
 }
 
@@ -2264,9 +2251,6 @@ static int mlxsw_sp_fid_fid_pack_cff(char *sfmr_pl,
 	err = fid->fid_family->ops->cff_pgt_base(fid, &mid_base);
 	if (err)
 		return err;
-
-	printk(KERN_WARNING "CFF pack op %d FID %d mid_base %#x profile %d\n",
-	       op, fid->fid_index, mid_base, fid->fid_family->profile_id);
 
 	smpe = fid->fid_family->smpe_index_valid ? fid->fid_index : 0;
 	mlxsw_reg_sfmr_pack_cff(sfmr_pl, op, fid->fid_index,
