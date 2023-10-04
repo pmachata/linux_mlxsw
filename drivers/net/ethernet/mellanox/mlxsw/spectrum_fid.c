@@ -96,6 +96,9 @@ struct mlxsw_sp_fid_ops {
 	int (*vid_to_fid_rif_update)(const struct mlxsw_sp_fid *fid,
 				     const struct mlxsw_sp_rif *rif);
 	int (*pgt_size)(const struct mlxsw_sp_fid_family *fid_family, u16 *size);
+	int (*fid_mid)(const struct mlxsw_sp_fid *fid,
+		       const struct mlxsw_sp_flood_table *flood_table,
+		       u16 *mid);
 };
 
 enum mlxsw_sp_fid_flood_profile {
@@ -345,16 +348,13 @@ mlxsw_sp_fid_ctl_pgt_base(const struct mlxsw_sp_fid_family *fid_family,
 	return fid_family->pgt_base + num_fids * flood_table->table_index;
 }
 
-static u16
-mlxsw_sp_fid_flood_table_mid(const struct mlxsw_sp_fid_family *fid_family,
-			     const struct mlxsw_sp_flood_table *flood_table,
-			     u16 fid_offset)
+static int mlxsw_sp_fid_fid_mid_ctl(const struct mlxsw_sp_fid *fid,
+				    const struct mlxsw_sp_flood_table *flood_table,
+				    u16 *mid)
 {
-	u16 num_fids;
-
-	num_fids = mlxsw_sp_fid_family_num_fids(fid_family);
-	return mlxsw_sp_fid_ctl_pgt_base(fid_family, flood_table) +
-	       fid_offset;
+	*mid = mlxsw_sp_fid_ctl_pgt_base(fid->fid_family, flood_table) +
+	       fid->fid_offset;
+	return 0;
 }
 
 int mlxsw_sp_fid_flood_set(struct mlxsw_sp_fid *fid,
@@ -364,6 +364,7 @@ int mlxsw_sp_fid_flood_set(struct mlxsw_sp_fid *fid,
 	struct mlxsw_sp_fid_family *fid_family = fid->fid_family;
 	const struct mlxsw_sp_flood_table *flood_table;
 	u16 mid_index;
+	int err;
 
 	if (WARN_ON(!fid_family->flood_tables))
 		return -EINVAL;
@@ -372,8 +373,10 @@ int mlxsw_sp_fid_flood_set(struct mlxsw_sp_fid *fid,
 	if (!flood_table)
 		return -ESRCH;
 
-	mid_index = mlxsw_sp_fid_flood_table_mid(fid_family, flood_table,
-						 fid->fid_offset);
+	err = fid_family->ops->fid_mid(fid, flood_table, &mid_index);
+	if (err)
+		return err;
+
 	return mlxsw_sp_pgt_entry_port_set(fid_family->mlxsw_sp, mid_index,
 					   fid->fid_index, local_port, member);
 }
@@ -1121,6 +1124,7 @@ static const struct mlxsw_sp_fid_ops mlxsw_sp_fid_8021d_ops_ctl = {
 	.fdb_clear_offload	= mlxsw_sp_fid_8021d_fdb_clear_offload,
 	.vid_to_fid_rif_update  = mlxsw_sp_fid_8021d_vid_to_fid_rif_update,
 	.pgt_size		= mlxsw_sp_fid_8021d_pgt_size,
+	.fid_mid		= mlxsw_sp_fid_fid_mid_ctl,
 };
 
 #define MLXSW_SP_FID_8021Q_MAX (VLAN_N_VID - 2)
@@ -1300,6 +1304,7 @@ static const struct mlxsw_sp_fid_ops mlxsw_sp_fid_rfid_ops_ctl = {
 	.nve_flood_index_set	= mlxsw_sp_fid_rfid_nve_flood_index_set,
 	.nve_flood_index_clear	= mlxsw_sp_fid_rfid_nve_flood_index_clear,
 	.vid_to_fid_rif_update  = mlxsw_sp_fid_rfid_vid_to_fid_rif_update,
+	.fid_mid		= mlxsw_sp_fid_fid_mid_ctl,
 };
 
 static void mlxsw_sp_fid_dummy_setup(struct mlxsw_sp_fid *fid, const void *arg)
@@ -1361,6 +1366,7 @@ static const struct mlxsw_sp_fid_ops mlxsw_sp_fid_dummy_ops_ctl = {
 	.vni_clear		= mlxsw_sp_fid_dummy_vni_clear,
 	.nve_flood_index_set	= mlxsw_sp_fid_dummy_nve_flood_index_set,
 	.nve_flood_index_clear	= mlxsw_sp_fid_dummy_nve_flood_index_clear,
+	.fid_mid		= mlxsw_sp_fid_fid_mid_ctl,
 };
 
 static int mlxsw_sp_fid_8021q_configure(struct mlxsw_sp_fid *fid)
@@ -1459,6 +1465,7 @@ static const struct mlxsw_sp_fid_ops mlxsw_sp_fid_8021q_ops_ctl = {
 	.fdb_clear_offload	= mlxsw_sp_fid_8021q_fdb_clear_offload,
 	.vid_to_fid_rif_update  = mlxsw_sp_fid_8021q_vid_to_fid_rif_update,
 	.pgt_size		= mlxsw_sp_fid_8021d_pgt_size,
+	.fid_mid		= mlxsw_sp_fid_fid_mid_ctl,
 };
 
 /* There are 4K-2 802.1Q FIDs */
