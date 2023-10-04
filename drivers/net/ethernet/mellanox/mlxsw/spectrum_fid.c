@@ -336,6 +336,16 @@ mlxsw_sp_fid_8021d_pgt_size(const struct mlxsw_sp_fid_family *fid_family,
 }
 
 static u16
+mlxsw_sp_fid_ctl_pgt_base(const struct mlxsw_sp_fid_family *fid_family,
+			  const struct mlxsw_sp_flood_table *flood_table)
+{
+	u16 num_fids;
+
+	num_fids = mlxsw_sp_fid_family_num_fids(fid_family);
+	return fid_family->pgt_base + num_fids * flood_table->table_index;
+}
+
+static u16
 mlxsw_sp_fid_flood_table_mid(const struct mlxsw_sp_fid_family *fid_family,
 			     const struct mlxsw_sp_flood_table *flood_table,
 			     u16 fid_offset)
@@ -343,7 +353,7 @@ mlxsw_sp_fid_flood_table_mid(const struct mlxsw_sp_fid_family *fid_family,
 	u16 num_fids;
 
 	num_fids = mlxsw_sp_fid_family_num_fids(fid_family);
-	return fid_family->pgt_base + num_fids * flood_table->table_index +
+	return mlxsw_sp_fid_ctl_pgt_base(fid_family, flood_table) +
 	       fid_offset;
 }
 
@@ -1681,7 +1691,7 @@ mlxsw_sp_fid_flood_table_init(struct mlxsw_sp_fid_family *fid_family,
 	u16 mid_base;
 	int err, i;
 
-	mid_base = mlxsw_sp_fid_flood_table_mid(fid_family, flood_table, 0);
+	mid_base = mlxsw_sp_fid_ctl_pgt_base(fid_family, flood_table);
 
 	sfgc_packet_types = mlxsw_sp_packet_type_sfgc_types[packet_type];
 	for (i = 0; i < MLXSW_REG_SFGC_TYPE_MAX; i++) {
