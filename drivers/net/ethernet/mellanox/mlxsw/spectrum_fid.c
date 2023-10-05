@@ -104,6 +104,10 @@ struct mlxsw_sp_fid_ops {
 	int (*fid_pack)(char *sfmr_pl, const struct mlxsw_sp_fid *fid,
 			const struct mlxsw_sp_rif *rif,
 			enum mlxsw_reg_sfmr_op op);
+	int (*fid_port_init)(const struct mlxsw_sp_fid_family *fid_family,
+			     struct mlxsw_sp_port *mlxsw_sp_port);
+	void (*fid_port_fini)(const struct mlxsw_sp_fid_family *fid_family,
+			      struct mlxsw_sp_port *mlxsw_sp_port);
 };
 
 enum mlxsw_sp_fid_flood_profile {
@@ -1853,9 +1857,52 @@ mlxsw_sp_fid_family_unregister(struct mlxsw_sp *mlxsw_sp,
 	kfree(fid_family);
 }
 
+static int
+mlxsw_sp_port_fids_init_fid_families(struct mlxsw_sp_port *mlxsw_sp_port)
+{
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
+	bool seen = false;
+	int err;
+	int i;
+
+	for (i = 0; i < MLXSW_SP_FID_TYPE_MAX; i++) {
+		const struct mlxsw_sp_fid_family *fid_family;
+
+		fid_family = mlxsw_sp->fid_core->fid_family_arr[i];
+		if (fid_family->ops->fid_port_init) {
+			WARN_ON_ONCE(seen); /* => No rollbacks needed. */
+			seen = true;
+
+			err = fid_family->ops->fid_port_init(fid_family,
+							     mlxsw_sp_port);
+			if (err)
+				return err;
+		}
+	}
+
+	return 0;
+}
+
+static void
+mlxsw_sp_port_fids_fini_fid_families(struct mlxsw_sp_port *mlxsw_sp_port)
+{
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
+	int i;
+
+	for (i = 0; i < MLXSW_SP_FID_TYPE_MAX; i++) {
+		const struct mlxsw_sp_fid_family *fid_family;
+
+		fid_family = mlxsw_sp->fid_core->fid_family_arr[i];
+		if (fid_family->ops->fid_port_fini)
+			fid_family->ops->fid_port_fini(fid_family,
+						       mlxsw_sp_port);
+	}
+}
+
 int mlxsw_sp_port_fids_init(struct mlxsw_sp_port *mlxsw_sp_port)
 {
 	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
+	int err;
 
 	/* Track number of FIDs configured on the port with mapping type
 	 * PORT_VID_TO_FID, so that we know when to transition the port
@@ -1863,14 +1910,37 @@ int mlxsw_sp_port_fids_init(struct mlxsw_sp_port *mlxsw_sp_port)
 	 */
 	mlxsw_sp->fid_core->port_fid_mappings[mlxsw_sp_port->local_port] = 0;
 
-	return mlxsw_sp_port_vp_mode_set(mlxsw_sp_port, false);
+	err = mlxsw_sp_port_fids_init_fid_families(mlxsw_sp_port);
+	if (err)
+		return err;
+
+	err = mlxsw_sp_port_vp_mode_set(mlxsw_sp_port, false);
+	if (err)
+		goto err_vp_mode_set;
+
+	return 0;
+
+err_vp_mode_set:
+	mlxsw_sp_port_fids_fini_fid_families(mlxsw_sp_port);
+	return err;
 }
 
 void mlxsw_sp_port_fids_fini(struct mlxsw_sp_port *mlxsw_sp_port)
 {
 	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
 
+	mlxsw_sp_port_fids_fini_fid_families(mlxsw_sp_port);
 	mlxsw_sp->fid_core->port_fid_mappings[mlxsw_sp_port->local_port] = 0;
+}
+
+int mlxsw_sp_fid_port_join_lag(struct mlxsw_sp_port *mlxsw_sp_port)
+{
+	return mlxsw_sp_port_fids_init_fid_families(mlxsw_sp_port);
+}
+
+void mlxsw_sp_fid_port_leave_lag(struct mlxsw_sp_port *mlxsw_sp_port)
+{
+	mlxsw_sp_port_fids_fini_fid_families(mlxsw_sp_port);
 }
 
 int mlxsw_sp_fids_init(struct mlxsw_sp *mlxsw_sp)
