@@ -61,7 +61,8 @@ int devlink_nl_msg_reply_and_new(struct sk_buff **msg, struct genl_info *info)
 }
 
 struct devlink *
-devlink_get_from_attrs_lock(struct net *net, struct nlattr **attrs)
+devlink_get_from_attrs_lock(struct net *net, struct nlattr **attrs,
+			    bool dev_lock)
 {
 	struct devlink *devlink;
 	unsigned long index;
@@ -75,12 +76,12 @@ devlink_get_from_attrs_lock(struct net *net, struct nlattr **attrs)
 	devname = nla_data(attrs[DEVLINK_ATTR_DEV_NAME]);
 
 	devlinks_xa_for_each_registered_get(net, index, devlink) {
-		devl_lock(devlink);
+		devl_dev_lock(devlink, dev_lock);
 		if (devl_is_registered(devlink) &&
 		    strcmp(devlink->dev->bus->name, busname) == 0 &&
 		    strcmp(dev_name(devlink->dev), devname) == 0)
 			return devlink;
-		devl_unlock(devlink);
+		devl_dev_unlock(devlink, dev_lock);
 		devlink_put(devlink);
 	}
 
@@ -92,9 +93,12 @@ static int __devlink_nl_pre_doit(struct sk_buff *skb, struct genl_info *info,
 {
 	struct devlink_port *devlink_port;
 	struct devlink *devlink;
+	bool dev_lock;
 	int err;
 
-	devlink = devlink_get_from_attrs_lock(genl_info_net(info), info->attrs);
+	dev_lock = !!(flags & DEVLINK_NL_FLAG_NEED_DEV_LOCK);
+	devlink = devlink_get_from_attrs_lock(genl_info_net(info), info->attrs,
+					      dev_lock);
 	if (IS_ERR(devlink))
 		return PTR_ERR(devlink);
 
@@ -114,7 +118,7 @@ static int __devlink_nl_pre_doit(struct sk_buff *skb, struct genl_info *info,
 	return 0;
 
 unlock:
-	devl_unlock(devlink);
+	devl_dev_unlock(devlink, dev_lock);
 	devlink_put(devlink);
 	return err;
 }
@@ -138,14 +142,35 @@ int devlink_nl_pre_doit_port_optional(const struct genl_split_ops *ops,
 	return __devlink_nl_pre_doit(skb, info, DEVLINK_NL_FLAG_NEED_DEVLINK_OR_PORT);
 }
 
+int devlink_nl_pre_doit_dev_lock(const struct genl_split_ops *ops,
+			struct sk_buff *skb, struct genl_info *info)
+{
+	return __devlink_nl_pre_doit(skb, info, DEVLINK_NL_FLAG_NEED_DEV_LOCK);
+}
+
+void __devlink_nl_post_doit(const struct genl_split_ops *ops,
+			    struct sk_buff *skb, struct genl_info *info,
+			    u8 flags)
+{
+	struct devlink *devlink;
+	bool dev_lock;
+
+	dev_lock = !!(flags & DEVLINK_NL_FLAG_NEED_DEV_LOCK);
+	devlink = info->user_ptr[0];
+	devl_dev_unlock(devlink, dev_lock);
+	devlink_put(devlink);
+}
+
 void devlink_nl_post_doit(const struct genl_split_ops *ops,
 			  struct sk_buff *skb, struct genl_info *info)
 {
-	struct devlink *devlink;
+	__devlink_nl_post_doit(ops, skb, info, 0);
+}
 
-	devlink = info->user_ptr[0];
-	devl_unlock(devlink);
-	devlink_put(devlink);
+void devlink_nl_post_doit_dev_lock(const struct genl_split_ops *ops,
+				   struct sk_buff *skb, struct genl_info *info)
+{
+	__devlink_nl_post_doit(ops, skb, info, DEVLINK_NL_FLAG_NEED_DEV_LOCK);
 }
 
 static int devlink_nl_inst_single_dumpit(struct sk_buff *msg,
@@ -156,7 +181,7 @@ static int devlink_nl_inst_single_dumpit(struct sk_buff *msg,
 	struct devlink *devlink;
 	int err;
 
-	devlink = devlink_get_from_attrs_lock(sock_net(msg->sk), attrs);
+	devlink = devlink_get_from_attrs_lock(sock_net(msg->sk), attrs, false);
 	if (IS_ERR(devlink))
 		return PTR_ERR(devlink);
 	err = dump_one(msg, devlink, cb, flags | NLM_F_DUMP_FILTERED);
