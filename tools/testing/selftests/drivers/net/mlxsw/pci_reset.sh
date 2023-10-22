@@ -33,8 +33,8 @@ pci_reset_test()
 		return
 	fi
 
-	[[ $(cat /sys/bus/pci/devices/$bdf/reset_method) == "device_specific bus" ]]
-	check_err $? "only \"device_specific\" and \"bus\" reset methods should be supported"
+	[[ $(cat /sys/bus/pci/devices/$bdf/reset_method) == "bus" ]]
+	check_err $? "only \"bus\" reset should be supported"
 
 	local ifindex_pre=$(ip -j link show dev $swp1 | jq '.[]["ifindex"]')
 
