@@ -520,13 +520,27 @@ void fib_nhc_update_mtu(struct fib_nh_common *nhc, u32 new, u32 orig);
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 int fib_multipath_hash(const struct net *net, const struct flowi4 *fl4,
 		       const struct sk_buff *skb, struct flow_keys *flkeys);
-#endif
 
+static inline u32 fib_multipath_hash_from_keys(const struct net *net,
+					       struct flow_keys *keys)
+{
+	struct sysctl_fib_multipath_hash_seed *mphs;
+	u32 ret;
+
+	rcu_read_lock();
+	mphs = rcu_dereference(net->ipv4.sysctl_fib_multipath_hash_seed);
+	ret = flow_hash_from_keys_seed(keys, &mphs->seed);
+	rcu_read_unlock();
+
+	return ret;
+}
+#else
 static inline u32 fib_multipath_hash_from_keys(const struct net *net,
 					       struct flow_keys *keys)
 {
 	return flow_hash_from_keys(keys);
 }
+#endif
 
 int fib_check_nh(struct net *net, struct fib_nh *nh, u32 table, u8 scope,
 		 struct netlink_ext_ack *extack);

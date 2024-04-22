@@ -1675,6 +1675,11 @@ EXPORT_SYMBOL(__skb_flow_dissect);
 
 static siphash_aligned_key_t hashrnd;
 
+void flow_keys_hash_get_secret(siphash_key_t *key)
+{
+	*key = hashrnd;
+}
+
 static const void *flow_keys_hash_start(const struct flow_keys *flow)
 {
 	BUILD_BUG_ON(FLOW_KEYS_HASH_OFFSET % SIPHASH_ALIGNMENT);
@@ -1786,6 +1791,13 @@ u32 flow_hash_from_keys(struct flow_keys *keys)
 	return __flow_hash_from_keys(keys, &hashrnd);
 }
 EXPORT_SYMBOL(flow_hash_from_keys);
+
+u32 flow_hash_from_keys_seed(struct flow_keys *keys,
+			     const siphash_key_t *keyval)
+{
+	return __flow_hash_from_keys(keys, keyval);
+}
+EXPORT_SYMBOL(flow_hash_from_keys_seed);
 
 static inline u32 ___skb_get_hash(const struct sk_buff *skb,
 				  struct flow_keys *keys,

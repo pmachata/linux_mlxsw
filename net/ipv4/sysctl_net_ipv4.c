@@ -462,6 +462,68 @@ static int proc_fib_multipath_hash_fields(struct ctl_table *table, int write,
 
 	return ret;
 }
+
+static void
+proc_fib_multipath_hash_construct_seed(u32 user_seed, siphash_key_t *key)
+{
+	u64 user_seed_64 = user_seed;
+
+	if (!user_seed)
+		return flow_keys_hash_get_secret(key);
+
+	key->key[0] = key->key[1] = (user_seed_64 << 32) | user_seed_64;
+}
+
+static int proc_fib_multipath_hash_set_seed(struct net *net, u32 user_seed)
+{
+	struct sysctl_fib_multipath_hash_seed *old_mphs;
+	struct sysctl_fib_multipath_hash_seed *mphs;
+
+	mphs = kzalloc(sizeof(*mphs), GFP_KERNEL);
+	if (!mphs)
+		return -ENOMEM;
+
+	mphs->user_seed = user_seed;
+	proc_fib_multipath_hash_construct_seed(user_seed, &mphs->seed);
+
+	rtnl_lock();
+	old_mphs = rtnl_dereference(net->ipv4.sysctl_fib_multipath_hash_seed);
+	rcu_assign_pointer(net->ipv4.sysctl_fib_multipath_hash_seed, mphs);
+	rtnl_unlock();
+
+	synchronize_rcu();
+	kfree_sensitive(old_mphs);
+	return 0;
+}
+
+static int proc_fib_multipath_hash_seed(struct ctl_table *table, int write,
+					void *buffer, size_t *lenp,
+					loff_t *ppos)
+{
+	struct sysctl_fib_multipath_hash_seed mphs;
+	struct net *net = table->data;
+	struct ctl_table tmp;
+	int ret;
+
+	rcu_read_lock();
+	mphs = *rcu_dereference(net->ipv4.sysctl_fib_multipath_hash_seed);
+	rcu_read_unlock();
+
+	tmp = *table;
+	tmp.data = &mphs.user_seed;
+
+	ret = proc_douintvec_minmax(&tmp, write, buffer, lenp, ppos);
+
+	if (write && ret == 0) {
+		ret = proc_fib_multipath_hash_set_seed(net, mphs.user_seed);
+		if (ret)
+			return ret;
+
+		call_netevent_notifiers(NETEVENT_IPV4_MPATH_HASH_UPDATE, net);
+	}
+
+	return ret;
+}
 #endif
 
 static struct ctl_table ipv4_table[] = {
@@ -1071,6 +1133,13 @@ static struct ctl_table ipv4_net_table[] = {
 		.extra1		= SYSCTL_ONE,
 		.extra2		= &fib_multipath_hash_fields_all_mask,
 	},
+	{
+		.procname	= "fib_multipath_hash_seed",
+		.data		= &init_net,
+		.maxlen		= sizeof(u32),
+		.mode		= 0600,
+		.proc_handler	= proc_fib_multipath_hash_seed,
+	},
 #endif
 	{
 		.procname	= "ip_unprivileged_port_start",
@@ -1505,9 +1574,26 @@ static struct ctl_table ipv4_net_table[] = {
 	{ }
 };
 
+static int ipv4_sysctl_fib_multipath_hash_seed_init_net(struct net *net)
+{
+#ifdef CONFIG_IP_ROUTE_MULTIPATH
+	return proc_fib_multipath_hash_set_seed(net, 0);
+#else
+	return 0;
+#endif
+}
+
+static void ipv4_sysctl_fib_multipath_hash_seed_exit_net(struct net *net)
+{
+#ifdef CONFIG_IP_ROUTE_MULTIPATH
+	kfree(net->ipv4.sysctl_fib_multipath_hash_seed);
+#endif
+}
+
 static __net_init int ipv4_sysctl_init_net(struct net *net)
 {
 	struct ctl_table *table;
+	int ret;
 
 	table = ipv4_net_table;
 	if (!net_eq(net, &init_net)) {
@@ -1541,8 +1627,14 @@ static __net_init int ipv4_sysctl_init_net(struct net *net)
 	if (!net->ipv4.sysctl_local_reserved_ports)
 		goto err_ports;
 
+	ret = ipv4_sysctl_fib_multipath_hash_seed_init_net(net);
+	if (ret)
+		goto err_mphs;
+
 	return 0;
 
+err_mphs:
+	kfree(net->ipv4.sysctl_local_reserved_ports);
 err_ports:
 	unregister_net_sysctl_table(net->ipv4.ipv4_hdr);
 err_reg:
@@ -1556,6 +1648,7 @@ static __net_exit void ipv4_sysctl_exit_net(struct net *net)
 {
 	const struct ctl_table *table;
 
+	ipv4_sysctl_fib_multipath_hash_seed_exit_net(net);
 	kfree(net->ipv4.sysctl_local_reserved_ports);
 	table = net->ipv4.ipv4_hdr->ctl_table_arg;
 	unregister_net_sysctl_table(net->ipv4.ipv4_hdr);

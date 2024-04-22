@@ -40,6 +40,13 @@ struct inet_timewait_death_row {
 
 struct tcp_fastopen_context;
 
+#ifdef CONFIG_IP_ROUTE_MULTIPATH
+struct sysctl_fib_multipath_hash_seed {
+	siphash_aligned_key_t	seed;
+	u32			user_seed;
+};
+#endif
+
 struct netns_ipv4 {
 	/* Cacheline organization can be found documented in
 	 * Documentation/networking/net_cachelines/netns_ipv4_sysctl.rst.
@@ -248,6 +255,8 @@ struct netns_ipv4 {
 	u32 sysctl_fib_multipath_hash_fields;
 	u8 sysctl_fib_multipath_use_neigh;
 	u8 sysctl_fib_multipath_hash_policy;
+	struct sysctl_fib_multipath_hash_seed
+					__rcu *sysctl_fib_multipath_hash_seed;
 #endif
 
 	struct fib_notifier_ops	*notifier_ops;
@@ -259,4 +268,11 @@ struct netns_ipv4 {
 	atomic_t	rt_genid;
 	siphash_key_t	ip_id_key;
 };
+
+#ifdef CONFIG_IP_ROUTE_MULTIPATH
+void
+proc_fib_multipath_hash_get_seed(const struct net *net,
+				 struct sysctl_fib_multipath_hash_seed *mphs);
+#endif
+
 #endif

@@ -131,6 +131,15 @@ fib_multipath_hash_fields - UNSIGNED INTEGER
 
 	Default: 0x0007 (source IP, destination IP and IP protocol)
 
+fib_multipath_hash_seed - UNSIGNED INTEGER
+	The seed value used when calculating hash for multipath routes. Only
+	valid for kernels built with CONFIG_IP_ROUTE_MULTIPATH enabled.
+
+	When set to 0, the seed value used for multipath routing defaults to an
+	internal random-generated one.
+
+	Default: 0
+
 fib_sync_mem - UNSIGNED INTEGER
 	Amount of dirty memory from fib entries that can be backlogged before
 	synchronize_rcu is forced.
