@@ -1674,10 +1674,6 @@ out_bad:
 EXPORT_SYMBOL(__skb_flow_dissect);
 
 static siphash_aligned_key_t hashrnd;
-static __always_inline void __flow_hash_secret_init(void)
-{
-	net_get_random_once(&hashrnd, sizeof(hashrnd));
-}
 
 static const void *flow_keys_hash_start(const struct flow_keys *flow)
 {
@@ -1787,7 +1783,6 @@ static inline u32 __flow_hash_from_keys(struct flow_keys *keys,
 
 u32 flow_hash_from_keys(struct flow_keys *keys)
 {
-	__flow_hash_secret_init();
 	return __flow_hash_from_keys(keys, &hashrnd);
 }
 EXPORT_SYMBOL(flow_hash_from_keys);
@@ -1835,8 +1830,6 @@ u32 __skb_get_hash_symmetric(const struct sk_buff *skb)
 {
 	struct flow_keys keys;
 
-	__flow_hash_secret_init();
-
 	memset(&keys, 0, sizeof(keys));
 	__skb_flow_dissect(NULL, skb, &flow_keys_dissector_symmetric,
 			   &keys, NULL, 0, 0, 0, 0);
@@ -1858,8 +1851,6 @@ void __skb_get_hash(struct sk_buff *skb)
 {
 	struct flow_keys keys;
 	u32 hash;
-
-	__flow_hash_secret_init();
 
 	hash = ___skb_get_hash(skb, &keys, &hashrnd);
 
@@ -2045,7 +2036,7 @@ EXPORT_SYMBOL(flow_keys_dissector);
 struct flow_dissector flow_keys_basic_dissector __read_mostly;
 EXPORT_SYMBOL(flow_keys_basic_dissector);
 
-static int __init init_default_flow_dissectors(void)
+static void init_default_flow_dissectors(void)
 {
 	skb_flow_dissector_init(&flow_keys_dissector,
 				flow_keys_dissector_keys,
@@ -2056,6 +2047,12 @@ static int __init init_default_flow_dissectors(void)
 	skb_flow_dissector_init(&flow_keys_basic_dissector,
 				flow_keys_basic_dissector_keys,
 				ARRAY_SIZE(flow_keys_basic_dissector_keys));
+}
+
+static int __init flow_dissector_init(void)
+{
+	init_default_flow_dissectors();
+	get_random_bytes(&hashrnd, sizeof(hashrnd));
 	return 0;
 }
-core_initcall(init_default_flow_dissectors);
+core_initcall(flow_dissector_init);
