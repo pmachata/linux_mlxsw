@@ -218,7 +218,7 @@ test_lag_slave()
 	RET=0
 
 	mirror_install $swp1 ingress gt4 \
-		       "proto 802.1q flower vlan_id 333 $tcflags"
+		       "proto 802.1q flower vlan_id 333"
 
 	# Move $down_dev away from the team. That will prompt change in
 	# txability of the connected device, without changing its upness. The
@@ -243,7 +243,7 @@ test_lag_slave()
 	# Wait for ${h,swp}{3,4}.
 	setup_wait
 
-	log_test "$what ($tcflags)"
+	log_test "$what"
 }
 
 test_mirror_gretap_first()
@@ -256,30 +256,11 @@ test_mirror_gretap_second()
 	test_lag_slave $h4 $h3 "mirror to gretap: LAG second slave"
 }
 
-test_all()
-{
-	slow_path_trap_install $swp1 ingress
-	slow_path_trap_install $swp1 egress
-
-	tests_run
-
-	slow_path_trap_uninstall $swp1 egress
-	slow_path_trap_uninstall $swp1 ingress
-}
-
 trap cleanup EXIT
 
 setup_prepare
 setup_wait
 
-tcflags="skip_hw"
-test_all
-
-if ! tc_offload_check; then
-	echo "WARN: Could not test offloaded functionality"
-else
-	tcflags="skip_sw"
-	test_all
-fi
+tests_run
 
 exit $EXIT_STATUS
