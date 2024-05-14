@@ -50,9 +50,6 @@ ALL_TESTS="
 NUM_NETIFS=6
 source lib.sh
 source mirror_lib.sh
-source mirror_gre_lib.sh
-
-require_command $ARPING
 
 vlan_host_create()
 {
