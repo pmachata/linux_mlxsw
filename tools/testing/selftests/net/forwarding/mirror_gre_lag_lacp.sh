@@ -37,8 +37,14 @@
 # |    \                                              /                       |
 # |     \____________________________________________/                        |
 # |                           |                                               |
-# |                           + lag2 (team)                                   |
-# |                             192.0.2.130/28                                |
+# |                           + lag2 (team)  ------>   + gt4-dst (gretap)     |
+# |                             192.0.2.130/28           loc=192.0.2.130      |
+# |                                                      rem=192.0.2.129      |
+# |                                                      ttl=100              |
+# |                                                      tos=inherit          |
+# |                                                                           |
+# |                                                                           |
+# |                                                                           |
 # |                                                                           |
 # +---------------------------------------------------------------------------+
 
@@ -122,10 +128,19 @@ h3_create()
 	tc qdisc add dev $h3 clsact
 	tc qdisc add dev $h4 clsact
 	h3_create_team
+
+	tunnel_create gt4-dst gretap 192.0.2.130 192.0.2.129 \
+		      ttl 100 tos inherit
+	ip link set dev gt4-dst master vrf-h3
+	tc qdisc add dev gt4-dst clsact
 }
 
 h3_destroy()
 {
+	tc qdisc del dev gt4-dst clsact
+	ip link set dev gt4-dst nomaster
+	tunnel_destroy gt4-dst
+
 	h3_destroy_team
 	tc qdisc del dev $h4 clsact
 	tc qdisc del dev $h3 clsact
@@ -215,7 +230,10 @@ test_lag_slave()
 	RET=0
 
 	mirror_install $swp1 ingress gt4 \
-		       "proto 802.1q flower vlan_id 333"
+		"proto 802.1q flower vlan_id 333 vlan_ethtype ipv4 ip_proto icmp"
+	tc filter add dev gt4-dst ingress pref 1 \
+		proto 802.1q flower vlan_id 333 vlan_ethtype ipv4 ip_proto icmp \
+		action pass
 
 	# Move $down_dev away from the team. That will prompt change in
 	# txability of the connected device, without changing its upness. The
@@ -223,13 +241,14 @@ test_lag_slave()
 	# other slave.
 	ip link set dev $down_dev nomaster
 	sleep 2
-	mirror_test vrf-h1 192.0.2.1 192.0.2.18 $up_dev 1 10
+	mirror_test vrf-h1 192.0.2.1 192.0.2.18 gt4-dst 1 10
 
 	# Test lack of connectivity when neither slave is txable.
 	ip link set dev $up_dev nomaster
 	sleep 2
-	mirror_test vrf-h1 192.0.2.1 192.0.2.18 $h3 1 0
-	mirror_test vrf-h1 192.0.2.1 192.0.2.18 $h4 1 0
+	mirror_test vrf-h1 192.0.2.1 192.0.2.18 gt4-dst 1 0
+
+	tc filter del dev gt4-dst ingress pref 1
 	mirror_uninstall $swp1 ingress
 
 	# Recreate H3's team device, because mlxsw, which this test is
