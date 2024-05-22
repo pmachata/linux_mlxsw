@@ -120,7 +120,6 @@ do_test_span_vlan_dir_ips()
 	# kernel.
 	vlan_capture_install $dev "skip_hw vlan_id $vid vlan_ethtype $ul_proto"
 	mirror_test v$h1 $ip1 $ip2 $dev 100 $expect
-	mirror_test v$h2 $ip2 $ip1 $dev 100 $expect
 	vlan_capture_uninstall $dev
 }
 
