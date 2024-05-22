@@ -61,9 +61,10 @@ do_test_span_dir_ips()
 	local dev=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
+	local vrf_name=${1-v$h1}; shift
 
 	icmp_capture_install $dev
-	mirror_test v$h1 $ip1 $ip2 $dev 100 $expect
+	mirror_test $vrf_name $ip1 $ip2 $dev 100 $expect
 	icmp_capture_uninstall $dev
 }
 
@@ -72,8 +73,9 @@ quick_test_span_dir_ips()
 	local dev=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
+	local vrf_name=${1-v$h1}; shift
 
-	do_test_span_dir_ips 10 "$dev" "$ip1" "$ip2"
+	do_test_span_dir_ips 10 "$dev" "$ip1" "$ip2" "$vrf_name"
 }
 
 test_span_dir_ips()
@@ -83,11 +85,12 @@ test_span_dir_ips()
 	local backward_type=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
+	local vrf_name=${1-v$h1}; shift
 
-	quick_test_span_dir_ips "$dev" "$ip1" "$ip2"
+	quick_test_span_dir_ips "$dev" "$ip1" "$ip2" "$vrf_name"
 
 	icmp_capture_install $dev "type $forward_type"
-	mirror_test v$h1 $ip1 $ip2 $dev 100 10
+	mirror_test "$vrf_name" $ip1 $ip2 $dev 100 10
 	icmp_capture_uninstall $dev
 }
 
@@ -98,7 +101,7 @@ test_span_dir()
 	local backward_type=$1; shift
 
 	test_span_dir_ips "$dev" "$forward_type" "$backward_type" \
-			  192.0.2.1 192.0.2.2
+			  192.0.2.1 192.0.2.2 v$h1
 }
 
 do_test_span_vlan_dir_ips()
@@ -109,12 +112,13 @@ do_test_span_vlan_dir_ips()
 	local ul_proto=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
+	local vrf_name=${1-v$h1}; shift
 
 	# Install the capture as skip_hw to avoid double-counting of packets.
 	# The traffic is meant for local box anyway, so will be trapped to
 	# kernel.
 	vlan_capture_install $dev "skip_hw vlan_id $vid vlan_ethtype $ul_proto"
-	mirror_test v$h1 $ip1 $ip2 $dev 100 $expect
+	mirror_test $vrf_name $ip1 $ip2 $dev 100 $expect
 	vlan_capture_uninstall $dev
 }
 
