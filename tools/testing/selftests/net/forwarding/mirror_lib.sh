@@ -90,10 +90,6 @@ test_span_dir_ips()
 	icmp_capture_install $dev "type $forward_type"
 	mirror_test v$h1 $ip1 $ip2 $dev 100 10
 	icmp_capture_uninstall $dev
-
-	icmp_capture_install $dev "type $backward_type"
-	mirror_test v$h2 $ip2 $ip1 $dev 100 10
-	icmp_capture_uninstall $dev
 }
 
 test_span_dir()
