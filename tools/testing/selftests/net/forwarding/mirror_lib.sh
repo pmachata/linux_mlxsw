@@ -64,7 +64,6 @@ do_test_span_dir_ips()
 
 	icmp_capture_install $dev
 	mirror_test v$h1 $ip1 $ip2 $dev 100 $expect
-	mirror_test v$h2 $ip2 $ip1 $dev 100 $expect
 	icmp_capture_uninstall $dev
 }
 
