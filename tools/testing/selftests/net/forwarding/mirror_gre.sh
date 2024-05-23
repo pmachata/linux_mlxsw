@@ -66,9 +66,19 @@ test_span_gre_mac()
 	local what=$1; shift
 
 	case "$direction" in
-	ingress) local src_mac=$(mac_get $h1); local dst_mac=$(mac_get $h2)
+	ingress)
+		local src_mac=$(mac_get $h1)
+		local dst_mac=$(mac_get $h2)
+		local sip=192.0.2.1
+		local dip=192.0.2.2
+		local vrf_name=v$h1
 		;;
-	egress) local src_mac=$(mac_get $h2); local dst_mac=$(mac_get $h1)
+	egress)
+		local src_mac=$(mac_get $h2)
+		local dst_mac=$(mac_get $h1)
+		local sip=192.0.2.2
+		local dip=192.0.2.1
+		local vrf_name=v$h2
 		;;
 	esac
 
@@ -77,7 +87,7 @@ test_span_gre_mac()
 	mirror_install $swp1 $direction $tundev "matchall $tcflags"
 	icmp_capture_install h3-${tundev} "src_mac $src_mac dst_mac $dst_mac"
 
-	mirror_test v$h1 192.0.2.1 192.0.2.2 h3-${tundev} 100 10
+	mirror_test $vrf_name $sip $dip h3-${tundev} 100 10
 
 	icmp_capture_uninstall h3-${tundev}
 	mirror_uninstall $swp1 $direction
@@ -92,16 +102,16 @@ test_two_spans()
 	mirror_install $swp1 ingress gt4 "matchall $tcflags"
 	mirror_install $swp1 egress gt6 "matchall $tcflags"
 	quick_test_span_gre_dir gt4
-	quick_test_span_gre_dir gt6
+	quick_rev_test_span_gre_dir gt6
 
 	mirror_uninstall $swp1 ingress
 	fail_test_span_gre_dir gt4
-	quick_test_span_gre_dir gt6
+	quick_rev_test_span_gre_dir gt6
 
 	mirror_install $swp1 ingress gt4 "matchall $tcflags"
 	mirror_uninstall $swp1 egress
 	quick_test_span_gre_dir gt4
-	fail_test_span_gre_dir gt6
+	fail_rev_test_span_gre_dir gt6
 
 	mirror_uninstall $swp1 ingress
 	log_test "two simultaneously configured mirrors ($tcflags)"
@@ -110,13 +120,13 @@ test_two_spans()
 test_gretap()
 {
 	full_test_span_gre_dir gt4 ingress 8 0 "mirror to gretap"
-	full_test_span_gre_dir gt4 egress 0 8 "mirror to gretap"
+	full_rev_test_span_gre_dir gt4 egress 0 8 "mirror to gretap"
 }
 
 test_ip6gretap()
 {
 	full_test_span_gre_dir gt6 ingress 8 0 "mirror to ip6gretap"
-	full_test_span_gre_dir gt6 egress 0 8 "mirror to ip6gretap"
+	full_rev_test_span_gre_dir gt6 egress 0 8 "mirror to ip6gretap"
 }
 
 test_gretap_mac()

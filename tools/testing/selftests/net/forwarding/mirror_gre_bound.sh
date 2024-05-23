@@ -187,13 +187,13 @@ cleanup()
 test_gretap()
 {
 	full_test_span_gre_dir gt4 ingress 8 0 "mirror to gretap w/ UL"
-	full_test_span_gre_dir gt4 egress  0 8 "mirror to gretap w/ UL"
+	full_rev_test_span_gre_dir gt4 egress  0 8 "mirror to gretap w/ UL"
 }
 
 test_ip6gretap()
 {
 	full_test_span_gre_dir gt6 ingress 8 0 "mirror to ip6gretap w/ UL"
-	full_test_span_gre_dir gt6 egress  0 8 "mirror to ip6gretap w/ UL"
+	full_rev_test_span_gre_dir gt6 egress  0 8 "mirror to ip6gretap w/ UL"
 }
 
 test_all()

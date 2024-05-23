@@ -1244,7 +1244,7 @@ __icmp_capture_add_del()
 
 	tc filter $add_del dev "$tundev" ingress \
 	   proto ip$vsuf pref $pref \
-	   flower ip_proto icmp$vsuf $filter \
+	   flower ip_proto udp src_port 57005 dst_port 48879 $filter \
 	   action pass
 }
 

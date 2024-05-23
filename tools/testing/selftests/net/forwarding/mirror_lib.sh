@@ -38,15 +38,13 @@ mirror_test()
 
 	if is_ipv6 $dip; then
 		local proto=-6
-		local type="icmp6 type=128" # Echo request.
 	else
 		local proto=
-		local type="icmp echoreq"
 	fi
 
 	local t0=$(tc_rule_stats_get $dev $pref)
 	$MZ $proto $vrf_name ${sip:+-A $sip} -B $dip -a own -b bc -q \
-	    -c 10 -d 100msec -t $type
+	    -c 10 -d 100msec -t udp sp=57005,dp=48879
 	sleep 0.5
 	local t1=$(tc_rule_stats_get $dev $pref)
 	local delta=$((t1 - t0))
@@ -102,6 +100,16 @@ test_span_dir()
 
 	test_span_dir_ips "$dev" "$forward_type" "$backward_type" \
 			  192.0.2.1 192.0.2.2 v$h1
+}
+
+rev_test_span_dir()
+{
+	local dev=$1; shift
+	local forward_type=$1; shift
+	local backward_type=$1; shift
+
+	test_span_dir_ips "$dev" "$forward_type" "$backward_type" \
+			  192.0.2.2 192.0.2.1 v$h2
 }
 
 do_test_span_vlan_dir_ips()

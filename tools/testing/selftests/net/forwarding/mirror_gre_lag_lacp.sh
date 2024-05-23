@@ -230,10 +230,12 @@ test_lag_slave()
 	RET=0
 
 	mirror_install $swp1 ingress gt4 \
-		"proto 802.1q flower vlan_id 333 vlan_ethtype ipv4 ip_proto icmp"
-	tc filter add dev gt4-dst ingress pref 1 \
-		proto 802.1q flower vlan_id 333 vlan_ethtype ipv4 ip_proto icmp \
-		action pass
+		       "proto 802.1q flower vlan_id 333 vlan_ethtype ipv4 \
+		        ip_proto udp src_port 57005 dst_port 48879"
+	tc filter add dev gt4-dst ingress pref 1 proto 802.1q \
+	   flower vlan_id 333 vlan_ethtype ipv4 \
+		  ip_proto udp src_port 57005 dst_port 48879 \
+	   action pass
 
 	# Move $down_dev away from the team. That will prompt change in
 	# txability of the connected device, without changing its upness. The

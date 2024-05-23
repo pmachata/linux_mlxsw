@@ -69,24 +69,42 @@ test_span_gre_dir_acl()
 	local backward_type=$1; shift
 
 	test_span_gre_dir_ips "$tundev" "$forward_type" \
-			      "$backward_type" 192.0.2.3 192.0.2.4
+			      "$backward_type" 192.0.2.3 192.0.2.4 v$h1
+}
+
+rev_test_span_gre_dir_acl()
+{
+	local tundev=$1; shift
+	local forward_type=$1; shift
+	local backward_type=$1; shift
+
+	test_span_gre_dir_ips "$tundev" "$forward_type" \
+			      "$backward_type" 192.0.2.4 192.0.2.3 v$h2
 }
 
 fail_test_span_gre_dir_acl()
 {
 	local tundev=$1; shift
 
-	fail_test_span_gre_dir_ips "$tundev" 192.0.2.3 192.0.2.4
+	fail_test_span_gre_dir_ips "$tundev" 192.0.2.3 192.0.2.4 v$h1
+}
+
+fail_rev_test_span_gre_dir_acl()
+{
+	local tundev=$1; shift
+
+	fail_test_span_gre_dir_ips "$tundev" 192.0.2.4 192.0.2.3 v$h2
 }
 
 full_test_span_gre_dir_acl()
 {
 	local tundev=$1; shift
-	local direction=$1; shift
 	local forward_type=$1; shift
 	local backward_type=$1; shift
 	local match_dip=$1; shift
 	local what=$1; shift
+
+	local direction=ingress
 
 	RET=0
 
@@ -102,16 +120,40 @@ full_test_span_gre_dir_acl()
 	log_test "$direction $what ($tcflags)"
 }
 
+full_rev_test_span_gre_dir_acl()
+{
+	local tundev=$1; shift
+	local forward_type=$1; shift
+	local backward_type=$1; shift
+	local match_dip=$1; shift
+	local what=$1; shift
+
+	local direction=egress
+
+	RET=0
+
+	mirror_install $swp1 $direction $tundev \
+		       "protocol ip flower $tcflags dst_ip $match_dip"
+	fail_rev_test_span_gre_dir $tundev
+	rev_test_span_gre_dir_acl "$tundev" "$forward_type" "$backward_type"
+	mirror_uninstall $swp1 $direction
+
+	# Test lack of mirroring after ACL mirror is uninstalled.
+	fail_rev_test_span_gre_dir_acl "$tundev"
+
+	log_test "$direction $what ($tcflags)"
+}
+
 test_gretap()
 {
-	full_test_span_gre_dir_acl gt4 ingress 8 0 192.0.2.4 "ACL mirror to gretap"
-	full_test_span_gre_dir_acl gt4 egress 0 8 192.0.2.3 "ACL mirror to gretap"
+	full_test_span_gre_dir_acl gt4 8 0 192.0.2.4 "ACL mirror to gretap"
+	full_rev_test_span_gre_dir_acl gt4 0 8 192.0.2.3 "ACL mirror to gretap"
 }
 
 test_ip6gretap()
 {
-	full_test_span_gre_dir_acl gt6 ingress 8 0 192.0.2.4 "ACL mirror to ip6gretap"
-	full_test_span_gre_dir_acl gt6 egress 0 8 192.0.2.3 "ACL mirror to ip6gretap"
+	full_test_span_gre_dir_acl gt6 8 0 192.0.2.4 "ACL mirror to ip6gretap"
+	full_rev_test_span_gre_dir_acl gt6 0 8 192.0.2.3 "ACL mirror to ip6gretap"
 }
 
 test_all()

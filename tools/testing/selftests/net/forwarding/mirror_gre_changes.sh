@@ -73,7 +73,8 @@ test_span_gre_ttl()
 	RET=0
 
 	mirror_install $swp1 ingress $tundev \
-		"prot ip flower $tcflags ip_prot icmp"
+		       "prot ip flower $tcflags ip_prot udp \
+			src_port 57005 dst_port 48879"
 	tc filter add dev $h3 ingress pref 77 prot $prot \
 		flower skip_hw ip_ttl 50 action pass
 
