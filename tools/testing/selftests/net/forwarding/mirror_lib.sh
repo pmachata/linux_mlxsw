@@ -42,14 +42,17 @@ mirror_test()
 		local proto=
 	fi
 
+	if [[ -z ${expect//[[:digit:]]/} ]]; then
+		expect="== $expect"
+	fi
+
 	local t0=$(tc_rule_stats_get $dev $pref)
 	$MZ $proto $vrf_name ${sip:+-A $sip} -B $dip -a own -b bc -q \
 	    -c 10 -d 100msec -t udp sp=57005,dp=48879
 	sleep 0.5
 	local t1=$(tc_rule_stats_get $dev $pref)
 	local delta=$((t1 - t0))
-	# Tolerate a couple stray extra packets.
-	((expect <= delta && delta <= expect + 2))
+	((delta $expect))
 	check_err $? "Expected to capture $expect packets, got $delta."
 }
 
@@ -87,7 +90,7 @@ test_span_dir_ips()
 
 	quick_test_span_dir_ips "$dev" "$ip1" "$ip2" "$vrf_name"
 
-	icmp_capture_install $dev "type $forward_type"
+	icmp_capture_install $dev
 	mirror_test "$vrf_name" $ip1 $ip2 $dev 100 10
 	icmp_capture_uninstall $dev
 }
@@ -126,7 +129,7 @@ do_test_span_vlan_dir_ips()
 	# The traffic is meant for local box anyway, so will be trapped to
 	# kernel.
 	vlan_capture_install $dev "skip_hw vlan_id $vid vlan_ethtype $ul_proto"
-	mirror_test $vrf_name $ip1 $ip2 $dev 100 $expect
+	mirror_test $vrf_name $ip1 $ip2 $dev 100 ">= $expect"
 	vlan_capture_uninstall $dev
 }
 
