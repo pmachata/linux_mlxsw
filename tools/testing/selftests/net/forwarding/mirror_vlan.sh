@@ -57,15 +57,12 @@ cleanup()
 
 test_vlan_dir()
 {
-	local forward_type=$1; shift
-	local backward_type=$1; shift
-
 	local direction=ingress
 
 	RET=0
 
 	mirror_install $swp1 $direction $swp3.555 "matchall $tcflags"
-	test_span_dir "$h3.555" "$forward_type" "$backward_type"
+	test_span_dir "$h3.555"
 	mirror_uninstall $swp1 $direction
 
 	log_test "$direction mirror to vlan ($tcflags)"
@@ -73,15 +70,12 @@ test_vlan_dir()
 
 rev_test_vlan_dir()
 {
-	local forward_type=$1; shift
-	local backward_type=$1; shift
-
 	local direction=egress
 
 	RET=0
 
 	mirror_install $swp1 $direction $swp3.555 "matchall $tcflags"
-	rev_test_span_dir "$h3.555" "$forward_type" "$backward_type"
+	rev_test_span_dir "$h3.555"
 	mirror_uninstall $swp1 $direction
 
 	log_test "$direction mirror to vlan ($tcflags)"
@@ -89,15 +83,12 @@ rev_test_vlan_dir()
 
 test_vlan()
 {
-	test_vlan_dir 8 0
-	rev_test_vlan_dir 0 8
+	test_vlan_dir
+	rev_test_vlan_dir
 }
 
 test_tagged_vlan_dir()
 {
-	local forward_type=$1; shift
-	local backward_type=$1; shift
-
 	local direction=ingress
 
 	RET=0
@@ -112,9 +103,6 @@ test_tagged_vlan_dir()
 
 rev_test_tagged_vlan_dir()
 {
-	local forward_type=$1; shift
-	local backward_type=$1; shift
-
 	local direction=egress
 
 	RET=0
@@ -129,8 +117,8 @@ rev_test_tagged_vlan_dir()
 
 test_tagged_vlan()
 {
-	test_tagged_vlan_dir ingress 8 0
-	rev_test_tagged_vlan_dir egress 0 8
+	test_tagged_vlan_dir ingress
+	rev_test_tagged_vlan_dir egress
 }
 
 test_all()

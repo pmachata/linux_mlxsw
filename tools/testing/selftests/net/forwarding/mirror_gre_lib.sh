@@ -25,22 +25,17 @@ fail_test_span_gre_dir_ips()
 test_span_gre_dir_ips()
 {
 	local tundev=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
 	local vrf_name=${1-v$h1}; shift
 
-	test_span_dir_ips h3-$tundev "$forward_type" \
-			  "$backward_type" "$ip1" "$ip2" "$vrf_name"
+	test_span_dir_ips h3-$tundev "$ip1" "$ip2" "$vrf_name"
 }
 
 full_test_span_gre_dir_ips()
 {
 	local tundev=$1; shift
 	local direction=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local what=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
@@ -49,8 +44,7 @@ full_test_span_gre_dir_ips()
 	RET=0
 
 	mirror_install $swp1 $direction $tundev "matchall $tcflags"
-	test_span_dir_ips "h3-$tundev" "$forward_type" \
-			  "$backward_type" "$ip1" "$ip2" "$vrf_name"
+	test_span_dir_ips "h3-$tundev" "$ip1" "$ip2" "$vrf_name"
 	mirror_uninstall $swp1 $direction
 
 	log_test "$direction $what ($tcflags)"
@@ -61,8 +55,6 @@ full_test_span_gre_dir_vlan_ips()
 	local tundev=$1; shift
 	local direction=$1; shift
 	local vlan_match=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local what=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
@@ -72,8 +64,7 @@ full_test_span_gre_dir_vlan_ips()
 
 	mirror_install $swp1 $direction $tundev "matchall $tcflags"
 
-	test_span_dir_ips "h3-$tundev" "$forward_type" \
-			  "$backward_type" "$ip1" "$ip2" "$vrf_name"
+	test_span_dir_ips "h3-$tundev" "$ip1" "$ip2" "$vrf_name"
 
 	tc filter add dev $h3 ingress pref 77 prot 802.1q \
 		flower $vlan_match \
@@ -118,12 +109,9 @@ full_test_span_gre_dir()
 {
 	local tundev=$1; shift
 	local direction=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local what=$1; shift
 
-	full_test_span_gre_dir_ips "$tundev" "$direction" "$forward_type" \
-				   "$backward_type" "$what" \
+	full_test_span_gre_dir_ips "$tundev" "$direction" "$what" \
 				   192.0.2.1 192.0.2.2 v$h1
 }
 
@@ -131,12 +119,9 @@ full_rev_test_span_gre_dir()
 {
 	local tundev=$1; shift
 	local direction=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local what=$1; shift
 
-	full_test_span_gre_dir_ips "$tundev" "$direction" "$forward_type" \
-				   "$backward_type" "$what" \
+	full_test_span_gre_dir_ips "$tundev" "$direction" "$what" \
 				   192.0.2.2 192.0.2.1 v$h2
 }
 
@@ -145,12 +130,9 @@ full_test_span_gre_dir_vlan()
 	local tundev=$1; shift
 	local direction=$1; shift
 	local vlan_match=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local what=$1; shift
 
 	full_test_span_gre_dir_vlan_ips "$tundev" "$direction" "$vlan_match" \
-					"$forward_type" "$backward_type" \
 					"$what" 192.0.2.1 192.0.2.2 v$h1
 }
 
@@ -159,12 +141,9 @@ full_rev_test_span_gre_dir_vlan()
 	local tundev=$1; shift
 	local direction=$1; shift
 	local vlan_match=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local what=$1; shift
 
 	full_test_span_gre_dir_vlan_ips "$tundev" "$direction" "$vlan_match" \
-					"$forward_type" "$backward_type" \
 					"$what" 192.0.2.2 192.0.2.1 v$h2
 }
 

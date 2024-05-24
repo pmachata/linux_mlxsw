@@ -82,8 +82,6 @@ quick_test_span_dir_ips()
 test_span_dir_ips()
 {
 	local dev=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
 	local vrf_name=${1-v$h1}; shift
@@ -98,21 +96,15 @@ test_span_dir_ips()
 test_span_dir()
 {
 	local dev=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 
-	test_span_dir_ips "$dev" "$forward_type" "$backward_type" \
-			  192.0.2.1 192.0.2.2 v$h1
+	test_span_dir_ips "$dev" 192.0.2.1 192.0.2.2 v$h1
 }
 
 rev_test_span_dir()
 {
 	local dev=$1; shift
-	local forward_type=$1; shift
-	local backward_type=$1; shift
 
-	test_span_dir_ips "$dev" "$forward_type" "$backward_type" \
-			  192.0.2.2 192.0.2.1 v$h2
+	test_span_dir_ips "$dev" 192.0.2.2 192.0.2.1 v$h2
 }
 
 do_test_span_vlan_dir_ips()

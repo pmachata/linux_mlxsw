@@ -119,14 +119,14 @@ test_two_spans()
 
 test_gretap()
 {
-	full_test_span_gre_dir gt4 ingress 8 0 "mirror to gretap"
-	full_rev_test_span_gre_dir gt4 egress 0 8 "mirror to gretap"
+	full_test_span_gre_dir gt4 ingress "mirror to gretap"
+	full_rev_test_span_gre_dir gt4 egress "mirror to gretap"
 }
 
 test_ip6gretap()
 {
-	full_test_span_gre_dir gt6 ingress 8 0 "mirror to ip6gretap"
-	full_rev_test_span_gre_dir gt6 egress 0 8 "mirror to ip6gretap"
+	full_test_span_gre_dir gt6 ingress "mirror to ip6gretap"
+	full_rev_test_span_gre_dir gt6 egress "mirror to ip6gretap"
 }
 
 test_gretap_mac()

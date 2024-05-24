@@ -129,8 +129,8 @@ test_vlan_match()
 	local vlan_match=$1; shift
 	local what=$1; shift
 
-	full_test_span_gre_dir_vlan $tundev ingress "$vlan_match" 8 0 "$what"
-	full_rev_test_span_gre_dir_vlan $tundev egress "$vlan_match" 0 8 "$what"
+	full_test_span_gre_dir_vlan $tundev ingress "$vlan_match" "$what"
+	full_rev_test_span_gre_dir_vlan $tundev egress "$vlan_match" "$what"
 }
 
 test_gretap()
