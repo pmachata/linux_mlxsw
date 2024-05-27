@@ -1234,6 +1234,7 @@ slow_path_trap_uninstall()
 	fi
 }
 
+# xxx rename
 __icmp_capture_add_del()
 {
 	local add_del=$1; shift
