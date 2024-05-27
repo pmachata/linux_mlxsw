@@ -61,6 +61,8 @@ do_test_span_dir_ips()
 	local dev=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
+	local forward_type=${1-8}; shift
+	local backward_type=${1-0}; shift
 
 	icmp_capture_install $dev
 	mirror_test v$h1 $ip1 $ip2 $dev 100 $expect
@@ -73,8 +75,11 @@ quick_test_span_dir_ips()
 	local dev=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
+	local forward_type=${1-8}; shift
+	local backward_type=${1-0}; shift
 
-	do_test_span_dir_ips 10 "$dev" "$ip1" "$ip2"
+	do_test_span_dir_ips 10 "$dev" "$ip1" "$ip2" \
+			     "$forward_type" "$backward_type"
 }
 
 test_span_dir_ips()
@@ -85,7 +90,8 @@ test_span_dir_ips()
 	local ip1=$1; shift
 	local ip2=$1; shift
 
-	quick_test_span_dir_ips "$dev" "$ip1" "$ip2"
+	quick_test_span_dir_ips "$dev" "$ip1" "$ip2" \
+				"$forward_type" "$backward_type"
 
 	icmp_capture_install $dev "type $forward_type"
 	mirror_test v$h1 $ip1 $ip2 $dev 100 10

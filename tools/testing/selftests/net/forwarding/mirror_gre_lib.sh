@@ -7,8 +7,11 @@ quick_test_span_gre_dir_ips()
 	local tundev=$1; shift
 	local ip1=$1; shift
 	local ip2=$1; shift
+	local forward_type=${1-8}; shift
+	local backward_type=${1-0}; shift
 
-	do_test_span_dir_ips 10 h3-$tundev "$ip1" "$ip2"
+	do_test_span_dir_ips 10 h3-$tundev "$ip1" "$ip2" \
+			     "$forward_type" "$backward_type"
 }
 
 fail_test_span_gre_dir_ips()
@@ -84,8 +87,11 @@ full_test_span_gre_dir_vlan_ips()
 quick_test_span_gre_dir()
 {
 	local tundev=$1; shift
+	local forward_type=${1-8}; shift
+	local backward_type=${1-0}; shift
 
-	quick_test_span_gre_dir_ips "$tundev" 192.0.2.1 192.0.2.2
+	quick_test_span_gre_dir_ips "$tundev" 192.0.2.1 192.0.2.2 \
+				    "$forward_type" "$backward_type"
 }
 
 fail_test_span_gre_dir()
