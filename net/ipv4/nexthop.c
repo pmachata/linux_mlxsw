@@ -926,7 +926,7 @@ static int nh_fill_node(struct sk_buff *skb, struct nexthop *nh,
 
 	nhm = nlmsg_data(nlh);
 	nhm->nh_family = AF_UNSPEC;
-	nhm->nh_flags = nh->nh_flags;
+	nhm->nh_flags = nh->nh_flags | RTNH_F_GRP_RESVD_0;
 	nhm->nh_protocol = nh->protocol;
 	nhm->nh_scope = 0;
 	nhm->resvd = 0;

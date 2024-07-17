@@ -422,6 +422,7 @@ struct rtnexthop {
 #define RTNH_F_LINKDOWN		16	/* carrier-down on nexthop */
 #define RTNH_F_UNRESOLVED	32	/* The entry is unresolved (ipmr) */
 #define RTNH_F_TRAP		64	/* Nexthop is trapping packets */
+#define RTNH_F_GRP_RESVD_0	128	/* Group resvd fields 0'd. Reply only. */
 
 #define RTNH_COMPARE_MASK	(RTNH_F_DEAD | RTNH_F_LINKDOWN | \
 				 RTNH_F_OFFLOAD | RTNH_F_TRAP)
