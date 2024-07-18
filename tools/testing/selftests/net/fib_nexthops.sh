@@ -52,8 +52,10 @@ IPV6_TESTS="
 ALL_TESTS="
 	basic
 	basic_res
-	${IPV4_TESTS}
-	${IPV6_TESTS}
+	$(grep -v torture <<< ${IPV4_TESTS})
+	$(grep -v torture <<< ${IPV6_TESTS})
+	$(grep torture <<< ${IPV4_TESTS})
+	$(grep torture <<< ${IPV6_TESTS})
 "
 TESTS="${ALL_TESTS}"
 VERBOSE=0
