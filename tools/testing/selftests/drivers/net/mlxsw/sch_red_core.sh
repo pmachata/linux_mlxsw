@@ -337,6 +337,7 @@ build_backlog()
 	local i=0
 
 	while :; do
+		sleep 0.5
 		local cur=$(busywait 1100 until_counter_is "> $cur" \
 					    get_qdisc_backlog $vlan)
 		local diff=$((size - cur))
@@ -500,6 +501,8 @@ do_red_test()
 	check_fail $? "Traffic went into backlog instead of being early-dropped"
 	pct=$(check_marking get_nmarked $vlan "== 0")
 	check_err $? "backlog $backlog / $limit Got $pct% marked packets, expected == 0."
+	backlog=$(busywait 5000 until_counter_is "> $((9 * limit / 10))" \
+			get_qdisc_backlog $vlan)
 	local diff=$((limit - backlog))
 	pct=$((100 * diff / limit))
 	((-10 <= pct && pct <= 10))
@@ -555,13 +558,14 @@ do_mark_test()
 
 	start_tcp_traffic $h1.$vlan $(ipaddr 1 $vlan) $(ipaddr 3 $vlan) \
 			  $h3_mac tos=0x01
-	defer stop_traffic
+	defer stop_traffic $!
 
 	# Create a bit of a backlog and observe no mirroring due to marks.
 	qevent_rule_install_$subtest
 
 	build_backlog $vlan $((2 * limit / 3)) tcp tos=0x01 >/dev/null
 
+	sleep 1
 	base=$($fetch_counter)
 	count=$(busywait 1100 until_counter_is ">= $((base + 1))" \
 		$fetch_counter)
