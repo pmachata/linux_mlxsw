@@ -14,6 +14,7 @@
 #include <linux/log2.h>
 #include <linux/string.h>
 #include <net/page_pool/helpers.h>
+#include <net/xdp.h>
 
 #include "pci_hw.h"
 #include "pci.h"
@@ -104,6 +105,7 @@ struct mlxsw_pci_queue_type_group {
 
 struct mlxsw_pci_xdp_port {
 	struct net_device *netdev;
+	struct xdp_rxq_info xdp_rxq;
 };
 
 struct mlxsw_pci {
@@ -2401,14 +2403,20 @@ mlxsw_pci_flood_mode(void *bus_priv)
 	return mlxsw_pci->flood_mode;
 }
 
-static void mlxsw_pci_xdp_port_init(void *bus_priv, u16 local_port,
-				    struct net_device *netdev)
+static int mlxsw_pci_xdp_port_init(void *bus_priv, u16 local_port,
+				   struct net_device *netdev)
 {
 	struct mlxsw_pci *mlxsw_pci = bus_priv;
 	struct mlxsw_pci_xdp_port *xdp_port;
+	int err;
 
 	xdp_port = &mlxsw_pci->xdp_ports[local_port];
+	err = xdp_rxq_info_reg(&xdp_port->xdp_rxq, netdev, 0, 0);
+	if (err)
+		return err;
+
 	xdp_port->netdev = netdev;
+	return 0;
 }
 
 static void mlxsw_pci_xdp_port_fini(void *bus_priv, u16 local_port)
@@ -2418,6 +2426,7 @@ static void mlxsw_pci_xdp_port_fini(void *bus_priv, u16 local_port)
 
 	xdp_port = &mlxsw_pci->xdp_ports[local_port];
 	xdp_port->netdev = NULL;
+	xdp_rxq_info_unreg(&xdp_port->xdp_rxq);
 }
 
 static const struct mlxsw_bus mlxsw_pci_bus = {
