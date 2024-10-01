@@ -218,7 +218,7 @@ psample_capture_start()
 
 psample_capture_stop()
 {
-	{ kill %% && wait %%; } 2>/dev/null
+	kill_process %%
 }
 
 __tc_sample_rate_test()
