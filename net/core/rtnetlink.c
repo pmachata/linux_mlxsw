@@ -4324,20 +4324,22 @@ static int rtnl_fdb_add(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	/* Embedded bridge, macvlan, and any other device support */
 	if ((ndm->ndm_flags & NTF_SELF)) {
-		if (dev->netdev_ops->ndo_fdb_add)
+		if (dev->netdev_ops->ndo_fdb_add) {
 			err = dev->netdev_ops->ndo_fdb_add(ndm, tb, dev, addr,
 							   vid,
 							   nlh->nlmsg_flags,
 							   extack);
-		else
+		} else {
 			err = ndo_dflt_fdb_add(ndm, tb, dev, addr, vid,
 					       nlh->nlmsg_flags);
 
-		if (!err) {
-			rtnl_fdb_notify(dev, addr, vid, RTM_NEWNEIGH,
-					ndm->ndm_state);
-			ndm->ndm_flags &= ~NTF_SELF;
+			if (!err)
+				rtnl_fdb_notify(dev, addr, vid, RTM_NEWNEIGH,
+						ndm->ndm_state);
 		}
+
+		if (!err)
+			ndm->ndm_flags &= ~NTF_SELF;
 	}
 out:
 	return err;

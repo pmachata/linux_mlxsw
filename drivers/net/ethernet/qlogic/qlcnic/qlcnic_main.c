@@ -399,8 +399,10 @@ static int qlcnic_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 	struct qlcnic_adapter *adapter = netdev_priv(netdev);
 	int err = 0;
 
-	if (!adapter->fdb_mac_learn)
-		return ndo_dflt_fdb_add(ndm, tb, netdev, addr, vid, flags);
+	if (!adapter->fdb_mac_learn) {
+		err = ndo_dflt_fdb_add(ndm, tb, netdev, addr, vid, flags);
+		goto out;
+	}
 
 	if (!(adapter->flags & QLCNIC_ESWITCH_ENABLED) &&
 	    !qlcnic_sriov_check(adapter)) {
@@ -409,7 +411,7 @@ static int qlcnic_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 	}
 
 	if (ether_addr_equal(addr, adapter->mac_addr))
-		return err;
+		goto out;
 
 	if (is_unicast_ether_addr(addr)) {
 		if (netdev_uc_count(netdev) < adapter->ahw->max_uc_count)
@@ -421,6 +423,10 @@ static int qlcnic_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 	} else {
 		err = -EINVAL;
 	}
+
+out:
+	if (!err)
+		rtnl_fdb_notify(dev, addr, vid, RTM_NEWNEIGH, ndm->ndm_state);
 
 	return err;
 }

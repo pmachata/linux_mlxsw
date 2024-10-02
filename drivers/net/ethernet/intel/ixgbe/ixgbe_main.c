@@ -9957,6 +9957,8 @@ static int ixgbe_ndo_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 			     u16 flags,
 			     struct netlink_ext_ack *extack)
 {
+	int err;
+
 	/* guarantee we can provide a unique filter for the unicast address */
 	if (is_unicast_ether_addr(addr) || is_link_local_ether_addr(addr)) {
 		struct ixgbe_adapter *adapter = netdev_priv(dev);
@@ -9966,7 +9968,12 @@ static int ixgbe_ndo_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 			return -ENOMEM;
 	}
 
-	return ndo_dflt_fdb_add(ndm, tb, dev, addr, vid, flags);
+	err = ndo_dflt_fdb_add(ndm, tb, dev, addr, vid, flags);
+
+	if (!err)
+		rtnl_fdb_notify(dev, addr, vid, RTM_NEWNEIGH, ndm->ndm_state);
+
+	return err;
 }
 
 /**
