@@ -4453,12 +4453,16 @@ static int rtnl_fdb_del(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	/* Embedded bridge, macvlan, and any other device support */
 	if (ndm->ndm_flags & NTF_SELF) {
+		bool notify = false;
+
 		ops = dev->netdev_ops;
 		if (!del_bulk) {
-			if (ops->ndo_fdb_del)
+			if (ops->ndo_fdb_del) {
 				err = ops->ndo_fdb_del(ndm, tb, dev, addr, vid, extack);
-			else
+			} else {
 				err = ndo_dflt_fdb_del(ndm, tb, dev, addr, vid);
+				notify = true;
+			}
 		} else {
 			/* in case err was cleared by NTF_MASTER call */
 			err = -EOPNOTSUPP;
@@ -4467,7 +4471,7 @@ static int rtnl_fdb_del(struct sk_buff *skb, struct nlmsghdr *nlh,
 		}
 
 		if (!err) {
-			if (!del_bulk)
+			if (notify)
 				rtnl_fdb_notify(dev, addr, vid, RTM_DELNEIGH,
 						ndm->ndm_state);
 			ndm->ndm_flags &= ~NTF_SELF;

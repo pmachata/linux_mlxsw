@@ -346,7 +346,7 @@ static int qlcnic_set_mac(struct net_device *netdev, void *p)
 
 	if (ether_addr_equal_unaligned(adapter->mac_addr, addr->sa_data) &&
 	    ether_addr_equal_unaligned(netdev->dev_addr, addr->sa_data))
-		return 0;
+		goto out;
 
 	if (test_bit(__QLCNIC_DEV_UP, &adapter->state)) {
 		netif_device_detach(netdev);
@@ -362,6 +362,9 @@ static int qlcnic_set_mac(struct net_device *netdev, void *p)
 		netif_device_attach(netdev);
 		qlcnic_napi_enable(adapter);
 	}
+
+out:
+	rtnl_fdb_notify(dev, addr, vid, RTM_DELNEIGH, ndm->ndm_state);
 	return 0;
 }
 
