@@ -1713,7 +1713,20 @@ int fib_add_nexthop(struct sk_buff *skb, const struct fib_nh_common *nhc,
 	if (!rtnh)
 		goto nla_put_failure;
 
-	rtnh->rtnh_hops = nh_weight - 1;
+	/* Due to the -1 bias of the ABI value vs nh_weight, nh_weight of 256
+	 * was allowed in theory even with 8-bit ABI. This was however never
+	 * accepted until full 16-bit support. So use 255 to indicate that the
+	 * nh_weight doesn't fit and userspace needs to inspect the attribute.
+	 */
+	nh_weight -= 1;
+	if (nh_weight >= 255) {
+		rtnh->rtnh_hops = 255;
+		if (nla_put_uint(skb, RTA_WEIGHT, nh_weight))
+			goto nla_put_failure;
+	} else {
+		rtnh->rtnh_hops = nh_weight;
+	}
+
 	rtnh->rtnh_ifindex = dev ? dev->ifindex : 0;
 
 	if (fib_nexthop_info(skb, nhc, rt_family, &flags, true) < 0)
