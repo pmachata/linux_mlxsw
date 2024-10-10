@@ -948,9 +948,17 @@ ipv6_grp_fcnal()
 		rc=$ksft_skip
 	fi
 
-	$IP nexthop flush >/dev/null 2>&1
-
 	log_test $rc 0 "16-bit weights"
+
+	if [[ $rc == 0 ]]; then
+		run_cmd "$IP route add 192.0.2.0/28 nhid 103"
+		check_route 192.0.2.1 "192.0.2.0/28 nhid 103 nexthop via inet6 2001:db8:91::2 dev veth1 weight 254 nexthop via inet6 2001:db8:91::3 dev veth1 weight 255 nexthop via inet6 2001:db8:91::4 dev veth1 weight 256 nexthop via inet6 2001:db8:91::5 dev veth1 weight 257 nexthop dev veth1 weight 65535"
+
+		log_test $? 0 "16-bit weights: route dump"
+		$IP route del 192.0.2.1/28
+	fi
+
+	$IP nexthop flush >/dev/null 2>&1
 }
 
 ipv6_res_grp_fcnal()
