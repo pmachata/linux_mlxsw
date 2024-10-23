@@ -3421,6 +3421,8 @@ static const struct nla_policy vxlan_policy[IFLA_VXLAN_MAX + 1] = {
 	[IFLA_VXLAN_VNIFILTER]	= { .type = NLA_U8 },
 	[IFLA_VXLAN_LOCALBYPASS]	= NLA_POLICY_MAX(NLA_U8, 1),
 	[IFLA_VXLAN_LABEL_POLICY]       = NLA_POLICY_MAX(NLA_U32, VXLAN_LABEL_MAX),
+	[IFLA_VXLAN_RESERVED_BITS]	= { .type = NLA_BINARY,
+					    .len = sizeof(struct vxlanhdr), },
 };
 
 static int vxlan_validate(struct nlattr *tb[], struct nlattr *data[],
@@ -4308,13 +4310,29 @@ static int vxlan_nl2conf(struct nlattr *tb[], struct nlattr *data[],
 		used_bits.vx_flags |= VXLAN_GPE_USED_BITS;
 	}
 
-	/* For backwards compatibility, only allow reserved fields to be
-	 * used by VXLAN extensions if explicitly requested.
-	 */
-	conf->reserved_bits = (struct vxlanhdr) {
-		.vx_flags = ~used_bits.vx_flags,
-		.vx_vni = ~used_bits.vx_vni,
-	};
+	if (data[IFLA_VXLAN_RESERVED_BITS]) {
+		struct vxlanhdr reserved_bits;
+
+		nla_memcpy(&reserved_bits, data[IFLA_VXLAN_RESERVED_BITS],
+			   sizeof(reserved_bits));
+		if (used_bits.vx_flags & reserved_bits.vx_flags ||
+		    used_bits.vx_vni & reserved_bits.vx_vni) {
+			NL_SET_ERR_MSG_ATTR(extack, data[IFLA_VXLAN_RESERVED_BITS],
+					    "Used bits set as required");
+			return -EINVAL;
+		}
+
+		conf->reserved_bits = reserved_bits;
+	} else {
+		/* For backwards compatibility, only allow reserved fields to be
+		 * used by VXLAN extensions if explicitly requested.
+		 */
+		conf->reserved_bits = (struct vxlanhdr) {
+			.vx_flags = ~used_bits.vx_flags,
+			.vx_vni = ~used_bits.vx_vni,
+		};
+	}
+
 	if (data[IFLA_VXLAN_REMCSUM_NOPARTIAL]) {
 		err = vxlan_nl2flag(conf, data, IFLA_VXLAN_REMCSUM_NOPARTIAL,
 				    VXLAN_F_REMCSUM_NOPARTIAL, changelink,
