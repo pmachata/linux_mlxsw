@@ -23,6 +23,7 @@
 #include "port.h"
 #include "resources.h"
 #include "txheader.h"
+#include "pci_xdp.h"
 
 #define mlxsw_pci_write32(mlxsw_pci, reg, val) \
 	iowrite32be(val, (mlxsw_pci)->hw_addr + (MLXSW_PCI_ ## reg))
@@ -803,6 +804,36 @@ static void mlxsw_pci_cqe_rdq_md_init(struct sk_buff *skb, const char *cqe)
 	mlxsw_pci_cqe_rdq_md_tx_port_init(skb, cqe);
 }
 
+/* Returns true if XDP handled the packet, and false if networking stack should
+ * handle it.
+ */
+static bool
+mlxsw_pci_xdp_handle(struct mlxsw_pci *mlxsw_pci, struct mlxsw_pci_queue *q,
+		     struct xdp_buff *xdp_buff,
+		     const struct mlxsw_pci_rx_pkt_info *rx_pkt_info,
+		     u16 local_port)
+{
+	struct mlxsw_pci_xdp_port *xdp_port;
+	enum mlxsw_xdp_status xdp_status;
+	struct bpf_prog *prog;
+
+	xdp_port = &mlxsw_pci->xdp_ports[local_port];
+	prog = rcu_dereference_bh(xdp_port->xdp_prog);
+	if (!prog)
+		return false;
+
+	mlxsw_xdp_buff_init(xdp_buff, rx_pkt_info, &q->u.rdq.xdp_rxq);
+
+	xdp_status = mlxsw_xdp_run(xdp_buff, prog, xdp_port->netdev);
+	switch (xdp_status) {
+	case MLXSW_XDP_STATUS_DROP:
+	case MLXSW_XDP_STATUS_FAIL:
+		return true;
+	}
+
+	return true;
+}
+
 static void mlxsw_pci_cqe_rdq_handle(struct mlxsw_pci *mlxsw_pci,
 				     struct mlxsw_pci_queue *q,
 				     u16 consumer_counter_limit,
@@ -812,6 +843,7 @@ static void mlxsw_pci_cqe_rdq_handle(struct mlxsw_pci *mlxsw_pci,
 	struct pci_dev *pdev = mlxsw_pci->pdev;
 	struct mlxsw_pci_queue_elem_info *elem_info;
 	struct mlxsw_rx_info rx_info = {};
+	struct xdp_buff xdp_buff = {};
 	struct sk_buff *skb;
 	u16 byte_count;
 	int err;
@@ -846,6 +878,10 @@ static void mlxsw_pci_cqe_rdq_handle(struct mlxsw_pci *mlxsw_pci,
 		goto out;
 
 	mlxsw_pci_sync_for_cpu(q, &rx_pkt_info);
+
+	if (mlxsw_pci_xdp_handle(mlxsw_pci, q, &xdp_buff, &rx_pkt_info,
+				 rx_info.local_port))
+		goto out;
 
 	err = mlxsw_pci_rdq_pages_alloc(q, elem_info,
 					rx_pkt_info.num_sg_entries);
