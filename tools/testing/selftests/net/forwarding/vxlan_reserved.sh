@@ -43,7 +43,21 @@
     "}
 
 NUM_NETIFS=4
-source lib.sh
+source $(dirname "$(readlink -e "${BASH_SOURCE[0]}")")/lib.sh
+
+if ! type -t vxlan_reserved_setup_hook >/dev/null; then
+	vxlan_reserved_setup_hook()
+	{
+		:
+	}
+fi
+
+if ! type -t vxlan_reserved_test_hook >/dev/null; then
+	vxlan_reserved_test_hook()
+	{
+		"$@"
+	}
+fi
 
 h1_create()
 {
@@ -264,9 +278,10 @@ __default_test_do()
 		10 vxlan_ping_vanilla
 
 	local t0=$(link_stats_get vx1 rx errors)
-	vxlan_ping_test "$what: mangled packets" \
-		"tc_rule_stats_get $h1 77 ingress" \
-		$n_allowed_bits vxlan_ping_reserved
+	vxlan_reserved_test_hook \
+		vxlan_ping_test "$what: mangled packets" \
+			"tc_rule_stats_get $h1 77 ingress" \
+			$n_allowed_bits vxlan_ping_reserved
 	local t1=$(link_stats_get vx1 rx errors)
 
 	RET=0
@@ -346,6 +361,7 @@ reserved_63_test()
 trap cleanup EXIT
 
 setup_prepare
+vxlan_reserved_setup_hook
 setup_wait
 tests_run
 
