@@ -2716,6 +2716,7 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct vxlan_dev *vxlan = netdev_priv(dev);
 	struct vxlan_rdst *rdst, *fdst = NULL;
 	const struct ip_tunnel_info *info;
+	enum skb_drop_reason reason;
 	struct vxlan_fdb *f;
 	struct ethhdr *eth;
 	__be32 vni = 0;
@@ -2738,6 +2739,15 @@ static netdev_tx_t vxlan_xmit(struct sk_buff *skb, struct net_device *dev)
 				kfree_skb_reason(skb, SKB_DROP_REASON_TUNNEL_TXINFO);
 			return NETDEV_TX_OK;
 		}
+	}
+
+	reason = pskb_may_pull_reason(skb, ETH_HLEN);
+	if (unlikely(reason != SKB_NOT_DROPPED_YET)) {
+		dev_core_stats_tx_dropped_inc(dev);
+		vxlan_vnifilter_count(vxlan, vni, NULL,
+				      VXLAN_VNI_STATS_TX_DROPS, 0);
+		kfree_skb_reason(skb, reason);
+		return NETDEV_TX_OK;
 	}
 
 	if (vxlan->cfg.flags & VXLAN_F_PROXY) {
