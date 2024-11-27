@@ -399,6 +399,20 @@ create_netif()
 	esac
 }
 
+netifs_map()
+{
+	if (($# != NUM_NETIFS)); then
+		echo "SKIP: Invalid request to map $# interfaces when NUM_NETIFS=$NUM_NETIFS"
+		exit $ksft_skip
+	fi
+
+	local i=1
+	while (($#)); do
+		printf -v $1 %s "${NETIFS[p$((i++))]}"
+		shift
+	done
+}
+
 declare -A MAC_ADDR_ORIG
 mac_addr_prepare()
 {
