@@ -1773,6 +1773,30 @@ int br_vlan_bridge_event(struct net_device *dev, unsigned long event, void *ptr)
 	return ret;
 }
 
+void br_vlan_vlan_upper_event(struct net_device *dev,
+			      struct net_device *upper_dev,
+			      unsigned long event, void *ptr)
+{
+	struct vlan_dev_priv *vlan = vlan_dev_priv(upper_dev);
+	struct net_bridge *br = netdev_priv(dev);
+	bool bridge_binding;
+
+	switch (event) {
+	case NETDEV_CHANGE:
+	case NETDEV_UP:
+		break;
+	default:
+		return;
+	}
+
+	bridge_binding = vlan->flags & VLAN_FLAG_BRIDGE_BINDING;
+	br_vlan_toggle_bridge_binding(dev, upper_dev, bridge_binding);
+	if (bridge_binding)
+		br_vlan_set_vlan_dev_state(br, upper_dev);
+	else if (!bridge_binding && netif_carrier_ok(dev))
+		netif_carrier_on(upper_dev);
+}
+
 /* Must be protected by RTNL. */
 void br_vlan_port_event(struct net_bridge_port *p, unsigned long event)
 {
