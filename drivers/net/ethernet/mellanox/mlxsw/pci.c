@@ -945,6 +945,7 @@ mlxsw_pci_xdp_handle(struct mlxsw_pci *mlxsw_pci, struct mlxsw_pci_queue *q,
 }
 
 static void mlxsw_pci_cqe_rdq_handle(struct mlxsw_pci *mlxsw_pci,
+				     struct napi_struct *napi,
 				     struct mlxsw_pci_queue *q,
 				     u16 consumer_counter_limit,
 				     enum mlxsw_pci_cqe_v cqe_v, char *cqe)
@@ -1032,6 +1033,7 @@ static void mlxsw_pci_cqe_rdq_handle(struct mlxsw_pci *mlxsw_pci,
 	}
 
 	mlxsw_pci_skb_cb_ts_set(mlxsw_pci, skb, cqe_v, cqe);
+	mlxsw_skb_cb(skb)->rx_md_info.napi = napi;
 
 	mlxsw_core_skb_receive(mlxsw_pci->core, skb, &rx_info);
 
@@ -1120,7 +1122,7 @@ static int mlxsw_pci_napi_poll_cq_rx(struct napi_struct *napi, int budget)
 			continue;
 		}
 
-		mlxsw_pci_cqe_rdq_handle(mlxsw_pci, rdq,
+		mlxsw_pci_cqe_rdq_handle(mlxsw_pci, napi, rdq,
 					 wqe_counter, q->u.cq.v, cqe);
 
 		if (++work_done == budget)
