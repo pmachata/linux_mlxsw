@@ -9,6 +9,9 @@ source "$net_dir/lib/sh/defer.sh"
 
 : "${WAIT_TIMEOUT:=20}"
 
+# Flags for tcpdump
+: "${TCPDUMP_EXTRA_FLAGS:=}"
+
 # Whether to pause on after a failure.
 : "${PAUSE_ON_FAIL:=no}"
 
@@ -448,6 +451,61 @@ kill_process()
 
 	# Suppress noise from killing the process.
 	{ kill $pid && wait $pid; } 2>/dev/null
+}
+
+declare -A cappid
+declare -A capfile
+declare -A capout
+
+tcpdump_start()
+{
+	local if_name=$1; shift
+	local ns=$1; shift
+
+	capfile[$if_name]=$(mktemp)
+	capout[$if_name]=$(mktemp)
+
+	if [ -z $ns ]; then
+		ns_cmd=""
+	else
+		ns_cmd="ip netns exec ${ns}"
+	fi
+
+	if [ -z $SUDO_USER ] ; then
+		capuser=""
+	else
+		capuser="-Z $SUDO_USER"
+	fi
+
+	$ns_cmd tcpdump $TCPDUMP_EXTRA_FLAGS -e -n -Q in -i $if_name \
+		-s 65535 -B 32768 $capuser -w ${capfile[$if_name]} \
+		> "${capout[$if_name]}" 2>&1 &
+	cappid[$if_name]=$!
+
+	sleep 1
+}
+
+tcpdump_stop()
+{
+	local if_name=$1
+	local pid=${cappid[$if_name]}
+
+	$ns_cmd kill "$pid" && wait "$pid"
+	sleep 1
+}
+
+tcpdump_cleanup()
+{
+	local if_name=$1
+
+	rm ${capfile[$if_name]} ${capout[$if_name]}
+}
+
+tcpdump_show()
+{
+	local if_name=$1
+
+	tcpdump -e -n -r ${capfile[$if_name]} 2>&1
 }
 
 ip_link_add()

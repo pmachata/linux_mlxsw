@@ -73,9 +73,6 @@ declare -A NETIFS=(
 # Whether to override MAC addresses on interfaces participating in the test.
 : "${STABLE_MAC_ADDRS:=no}"
 
-# Flags for tcpdump
-: "${TCPDUMP_EXTRA_FLAGS:=}"
-
 # Flags for TC filters.
 : "${TC_FLAG:=skip_hw}"
 
@@ -1572,61 +1569,6 @@ stop_traffic()
 	local pid=${1-%%}; shift
 
 	kill_process "$pid"
-}
-
-declare -A cappid
-declare -A capfile
-declare -A capout
-
-tcpdump_start()
-{
-	local if_name=$1; shift
-	local ns=$1; shift
-
-	capfile[$if_name]=$(mktemp)
-	capout[$if_name]=$(mktemp)
-
-	if [ -z $ns ]; then
-		ns_cmd=""
-	else
-		ns_cmd="ip netns exec ${ns}"
-	fi
-
-	if [ -z $SUDO_USER ] ; then
-		capuser=""
-	else
-		capuser="-Z $SUDO_USER"
-	fi
-
-	$ns_cmd tcpdump $TCPDUMP_EXTRA_FLAGS -e -n -Q in -i $if_name \
-		-s 65535 -B 32768 $capuser -w ${capfile[$if_name]} \
-		> "${capout[$if_name]}" 2>&1 &
-	cappid[$if_name]=$!
-
-	sleep 1
-}
-
-tcpdump_stop()
-{
-	local if_name=$1
-	local pid=${cappid[$if_name]}
-
-	$ns_cmd kill "$pid" && wait "$pid"
-	sleep 1
-}
-
-tcpdump_cleanup()
-{
-	local if_name=$1
-
-	rm ${capfile[$if_name]} ${capout[$if_name]}
-}
-
-tcpdump_show()
-{
-	local if_name=$1
-
-	tcpdump -e -n -r ${capfile[$if_name]} 2>&1
 }
 
 # return 0 if the packet wasn't seen on host2_if or 1 if it was
