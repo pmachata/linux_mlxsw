@@ -489,6 +489,7 @@ tcpdump_start()
 	capfile[$if_name]=$(mktemp)
 	capout[$if_name]=$(mktemp)
 
+	local ns_cmd
 	if [ -z $ns ]; then
 		ns_cmd=""
 	else
@@ -514,7 +515,7 @@ tcpdump_stop()
 	local if_name=$1
 	local pid=${cappid[$if_name]}
 
-	$ns_cmd kill "$pid" && wait "$pid"
+	kill_process "$pid"
 	sleep 1
 }
 
