@@ -1769,7 +1769,7 @@ hw_stats_monitor_test()
 	log_test "${type}_stats notifications"
 }
 
-ipv4_to_bytes()
+pkt_ipv4_to_bytes()
 {
 	local IP=$1; shift
 
@@ -1781,7 +1781,7 @@ ipv4_to_bytes()
 # expanded, and each 16-bit group is padded with zeroes to be 4 hexadecimal
 # digits. An optional `BYTESEP' parameter can be given to further separate
 # individual bytes of each 16-bit group.
-expand_ipv6()
+pkt_expand_ipv6()
 {
 	local IP=$1; shift
 	local bytesep=$1; shift
@@ -1799,14 +1799,14 @@ expand_ipv6()
 	    sed 's/:$//'
 }
 
-ipv6_to_bytes()
+pkt_ipv6_to_bytes()
 {
 	local IP=$1; shift
 
-	expand_ipv6 "$IP" :
+	pkt_expand_ipv6 "$IP" :
 }
 
-u16_to_bytes()
+pkt_u16_to_bytes()
 {
 	local u16=$1; shift
 
@@ -1817,7 +1817,7 @@ u16_to_bytes()
 # possibly with a keyword CHECKSUM stashed where a 16-bit checksum should be,
 # calculate checksum as per RFC 1071, assuming the CHECKSUM field (if any)
 # stands for 00:00.
-payload_template_calc_checksum()
+pkt_payload_template_calc_checksum()
 {
 	local payload=$1; shift
 
@@ -1844,31 +1844,31 @@ payload_template_calc_checksum()
 	    tr '[:upper:]' '[:lower:]'
 }
 
-payload_template_expand_checksum()
+pkt_payload_template_expand_checksum()
 {
 	local payload=$1; shift
 	local checksum=$1; shift
 
-	local ckbytes=$(u16_to_bytes $checksum)
+	local ckbytes=$(pkt_u16_to_bytes $checksum)
 
 	echo "$payload" | sed "s/CHECKSUM/$ckbytes/g"
 }
 
-payload_template_nbytes()
+pkt_payload_template_nbytes()
 {
 	local payload=$1; shift
 
-	payload_template_expand_checksum "${payload%:}" 0 |
+	pkt_payload_template_expand_checksum "${payload%:}" 0 |
 		sed 's/:/\n/g' | wc -l
 }
 
-igmpv3_is_in_get()
+pkt_igmpv3_query_get()
 {
 	local GRP=$1; shift
 	local sources=("$@")
 
 	local igmpv3
-	local nsources=$(u16_to_bytes ${#sources[@]})
+	local nsources=$(pkt_u16_to_bytes ${#sources[@]})
 
 	# IS_IN ( $sources )
 	igmpv3=$(:
@@ -1880,18 +1880,18 @@ igmpv3_is_in_get()
 		)"01:"$(			: Record Type - IS_IN
 		)"00:"$(			: Aux Data Len
 		)"${nsources}:"$(		: Number of Sources
-		)"$(ipv4_to_bytes $GRP):"$(	: Multicast Address
+		)"$(pkt_ipv4_to_bytes $GRP):"$(	: Multicast Address
 		)"$(for src in "${sources[@]}"; do
-			ipv4_to_bytes $src
+			pkt_ipv4_to_bytes $src
 			echo -n :
 		    done)"$(			: Source Addresses
 		)
-	local checksum=$(payload_template_calc_checksum "$igmpv3")
+	local checksum=$(pkt_payload_template_calc_checksum "$igmpv3")
 
-	payload_template_expand_checksum "$igmpv3" $checksum
+	pkt_payload_template_expand_checksum "$igmpv3" $checksum
 }
 
-igmpv2_leave_get()
+pkt_igmpv2_leave_get()
 {
 	local GRP=$1; shift
 
@@ -1899,14 +1899,14 @@ igmpv2_leave_get()
 		)"17:"$(			: Type - Leave Group
 		)"00:"$(			: Max Resp Time - not meaningful
 		)"CHECKSUM:"$(			: Checksum
-		)"$(ipv4_to_bytes $GRP)"$(	: Group Address
+		)"$(pkt_ipv4_to_bytes $GRP)"$(	: Group Address
 		)
-	local checksum=$(payload_template_calc_checksum "$payload")
+	local checksum=$(pkt_payload_template_calc_checksum "$payload")
 
-	payload_template_expand_checksum "$payload" $checksum
+	pkt_payload_template_expand_checksum "$payload" $checksum
 }
 
-mldv2_is_in_get()
+pkt_mldv2_is_in_get()
 {
 	local SIP=$1; shift
 	local GRP=$1; shift
@@ -1914,7 +1914,7 @@ mldv2_is_in_get()
 
 	local hbh
 	local icmpv6
-	local nsources=$(u16_to_bytes ${#sources[@]})
+	local nsources=$(pkt_u16_to_bytes ${#sources[@]})
 
 	hbh=$(:
 		)"3a:"$(			: Next Header - ICMPv6
@@ -1931,26 +1931,26 @@ mldv2_is_in_get()
 		)"01:"$(			: Record Type - IS_IN
 		)"00:"$(			: Aux Data Len
 		)"${nsources}:"$(		: Number of Sources
-		)"$(ipv6_to_bytes $GRP):"$(	: Multicast address
+		)"$(pkt_ipv6_to_bytes $GRP):"$(	: Multicast address
 		)"$(for src in "${sources[@]}"; do
-			ipv6_to_bytes $src
+			pkt_ipv6_to_bytes $src
 			echo -n :
 		    done)"$(			: Source Addresses
 		)
 
-	local len=$(u16_to_bytes $(payload_template_nbytes $icmpv6))
+	local len=$(pkt_u16_to_bytes $(pkt_payload_template_nbytes $icmpv6))
 	local sudohdr=$(:
-		)"$(ipv6_to_bytes $SIP):"$(	: SIP
-		)"$(ipv6_to_bytes $GRP):"$(	: DIP is multicast address
+		)"$(pkt_ipv6_to_bytes $SIP):"$(	: SIP
+		)"$(pkt_ipv6_to_bytes $GRP):"$(	: DIP is multicast address
 	        )"${len}:"$(			: Upper-layer length
 	        )"00:3a:"$(			: Zero and next-header
 	        )
-	local checksum=$(payload_template_calc_checksum ${sudohdr}${icmpv6})
+	local checksum=$(pkt_payload_template_calc_checksum ${sudohdr}${icmpv6})
 
-	payload_template_expand_checksum "$hbh$icmpv6" $checksum
+	pkt_payload_template_expand_checksum "$hbh$icmpv6" $checksum
 }
 
-mldv1_done_get()
+pkt_mldv1_done_get()
 {
 	local SIP=$1; shift
 	local GRP=$1; shift
@@ -1970,19 +1970,19 @@ mldv1_done_get()
 		)"CHECKSUM:"$(			: Checksum
 		)"00:00:"$(			: Max Resp Delay - not meaningful
 		)"00:00:"$(			: Reserved
-		)"$(ipv6_to_bytes $GRP):"$(	: Multicast address
+		)"$(pkt_ipv6_to_bytes $GRP):"$(	: Multicast address
 		)
 
-	local len=$(u16_to_bytes $(payload_template_nbytes $icmpv6))
+	local len=$(pkt_u16_to_bytes $(pkt_payload_template_nbytes $icmpv6))
 	local sudohdr=$(:
-		)"$(ipv6_to_bytes $SIP):"$(	: SIP
-		)"$(ipv6_to_bytes $GRP):"$(	: DIP is multicast address
+		)"$(pkt_ipv6_to_bytes $SIP):"$(	: SIP
+		)"$(pkt_ipv6_to_bytes $GRP):"$(	: DIP is multicast address
 	        )"${len}:"$(			: Upper-layer length
 	        )"00:3a:"$(			: Zero and next-header
 	        )
-	local checksum=$(payload_template_calc_checksum ${sudohdr}${icmpv6})
+	local checksum=$(pkt_payload_template_calc_checksum ${sudohdr}${icmpv6})
 
-	payload_template_expand_checksum "$hbh$icmpv6" $checksum
+	pkt_payload_template_expand_checksum "$hbh$icmpv6" $checksum
 }
 
 bail_on_lldpad()
