@@ -528,9 +528,9 @@ tcpdump_cleanup()
 
 tcpdump_show()
 {
-	local if_name=$1
+	local if_name=$1; shift
 
-	tcpdump -e -n -r ${capfile[$if_name]} 2>&1
+	tcpdump -e -n -r ${capfile[$if_name]} "$@" 2>&1
 }
 
 ip_link_add()
