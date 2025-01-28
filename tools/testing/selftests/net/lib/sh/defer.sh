@@ -1,4 +1,3 @@
-#!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 
 # map[(scope_id,track,cleanup_id) -> cleanup_command]
