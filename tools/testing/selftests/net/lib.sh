@@ -453,6 +453,16 @@ kill_process()
 	{ kill $pid && wait $pid; } 2>/dev/null
 }
 
+require_command()
+{
+	local cmd=$1; shift
+
+	if [[ ! -x "$(command -v "$cmd")" ]]; then
+		log_test_skip "$cmd not installed"
+		exit $EXIT_STATUS
+	fi
+}
+
 declare -A cappid
 declare -A capfile
 declare -A capout
