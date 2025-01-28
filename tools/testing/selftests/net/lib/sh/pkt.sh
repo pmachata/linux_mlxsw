@@ -215,3 +215,43 @@ pkt_mldv1_done_get()
 
 	pkt_payload_template_expand_checksum "$hbh$icmpv6" $checksum
 }
+
+pkt_igmpv3_query_get()
+{
+	local GRP=$1; shift
+	local sources=("$@")
+
+	local igmpv3
+	local nsources=$(pkt_u16_to_bytes ${#sources[@]})
+
+	# QUERY ( $sources )
+	igmpv3=$(:
+		)"11:"$(			: Type - Membership Query
+		)"00:"$(			: Max Resp Code
+		)"CHECKSUM:"$(			: Checksum
+		)"$(pkt_ipv4_to_bytes $GRP):"$(	: Group Address
+		)"00:"$(			: Rsv / S / QRV
+		)"00:"$(			: QQIC
+		)"${nsources}:"$(		: Number of Sources
+		)"$(for src in "${sources[@]}"; do
+			pkt_ipv4_to_bytes $src
+			echo -n :
+		    done)"$(			: Source Addresses
+		)
+	local checksum=$(pkt_payload_template_calc_checksum "$igmpv3")
+
+	pkt_payload_template_expand_checksum "$igmpv3" $checksum
+}
+
+pkt_igmpv3_parse_records()
+{
+	# This is how tcpdump shows membership reports (all in one line):
+	#   192.0.2.1 > 224.0.0.22: igmp v3 report, 2 group record(s)
+	#   [gaddr 224.0.1.6 is_ex, 0 source(s)]
+	#   [gaddr 224.0.0.5 is_ex, 0 source(s)]
+
+	grep 'igmp v3 report' |
+	    grep -o '\[[^]]*]' |
+	    cut -d' ' -f 2,3 |
+	    tr -d ,
+}
