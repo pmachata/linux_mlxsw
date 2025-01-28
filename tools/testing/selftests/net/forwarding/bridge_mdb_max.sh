@@ -254,7 +254,7 @@ ctl4_entries_add()
 	local GRP=239.1.1.${grp}
 	local dmac=01:00:5e:01:01:$(printf "%02x" $grp)
 	$MZ $peer -a own -b $dmac -c 1 -A 192.0.2.1 -B $GRP \
-		-t ip proto=2,p=$(igmpv3_is_in_get $GRP $IPs) -q
+		-t ip proto=2,p=$(pkt_igmpv3_is_in_get $GRP $IPs) -q
 	sleep 1
 
 	local nn=$(bridge mdb show dev br0 | grep $GRP | wc -l)
@@ -275,7 +275,7 @@ ctl4_entries_del()
 	local GRP=239.1.1.${grp}
 	local dmac=01:00:5e:00:00:02
 	$MZ $peer -a own -b $dmac -c 1 -A 192.0.2.1 -B 224.0.0.2 \
-		-t ip proto=2,p=$(igmpv2_leave_get $GRP) -q
+		-t ip proto=2,p=$(pkt_igmpv2_leave_get $GRP) -q
 	sleep 1
 	! bridge mdb show dev br0 | grep -q $GRP
 }
@@ -292,7 +292,7 @@ ctl6_entries_add()
 	local SIP=fe80::1
 	local GRP=ff0e::${grp}
 	local dmac=33:33:00:00:00:$(printf "%02x" $grp)
-	local p=$(mldv2_is_in_get $SIP $GRP $IPs)
+	local p=$(pkt_mldv2_is_in_get $SIP $GRP $IPs)
 	$MZ -6 $peer -a own -b $dmac -c 1 -A $SIP -B $GRP \
 		-t ip hop=1,next=0,p="$p" -q
 	sleep 1
@@ -315,7 +315,7 @@ ctl6_entries_del()
 	local SIP=fe80::1
 	local GRP=ff0e::${grp}
 	local dmac=33:33:00:00:00:$(printf "%02x" $grp)
-	local p=$(mldv1_done_get $SIP $GRP)
+	local p=$(pkt_mldv1_done_get $SIP $GRP)
 	$MZ -6 $peer -a own -b $dmac -c 1 -A $SIP -B $GRP \
 		-t ip hop=1,next=0,p="$p" -q
 	sleep 1

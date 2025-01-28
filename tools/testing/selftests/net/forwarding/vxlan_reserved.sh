@@ -182,8 +182,8 @@ vxlan_ping_do()
 		    )"40:"$(                         : IP TTL
 		    )"01:"$(                         : IP proto
 		    )"00:00:"$(                      : IP header csum
-		    )"$(ipv4_to_bytes 192.0.2.3):"$( : IP saddr
-		    )"$(ipv4_to_bytes 192.0.2.1):"$( : IP daddr
+		    )"$(pkt_ipv4_to_bytes 192.0.2.3):"$( : IP saddr
+		    )"$(pkt_ipv4_to_bytes 192.0.2.1):"$( : IP daddr
 		    )"08:"$(                         : ICMP type
 		    )"00:"$(                         : ICMP code
 		    )"8b:f2:"$(                      : ICMP csum
