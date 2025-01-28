@@ -33,6 +33,7 @@ ALL_TESTS="
 NUM_NETIFS=4
 source lib.sh
 source tc_common.sh
+source ../lib/sh/pkt.sh
 
 h1_create()
 {

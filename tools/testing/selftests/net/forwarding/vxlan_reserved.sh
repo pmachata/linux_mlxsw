@@ -44,6 +44,7 @@
 
 NUM_NETIFS=4
 source lib.sh
+source ../lib/sh/pkt.sh
 
 h1_create()
 {
