@@ -29,10 +29,6 @@ declare -A NETIFS=(
 : "${ARPING:=arping}"
 : "${TROUTE6:=traceroute6}"
 
-# Packet generator.
-: "${MZ:=mausezahn}"	# Some distributions use 'mz'.
-: "${MZ_DELAY:=0}"
-
 # Host configuration tools.
 : "${TEAMD:=teamd}"
 : "${MCD:=smcrouted}"
@@ -66,7 +62,7 @@ declare -A NETIFS=(
 
 # Whether to check for availability of certain tools.
 : "${REQUIRE_JQ:=yes}"
-: "${REQUIRE_MZ:=yes}"
+: "${REQUIRE_MZ:=yes}"    # Override the default from ../lib.sh
 : "${REQUIRE_MTOOLS:=no}"
 : "${REQUIRE_TEAMD:=no}"
 
@@ -305,9 +301,6 @@ check_mtools_version()
 
 if [[ "$REQUIRE_JQ" = "yes" ]]; then
 	require_command jq
-fi
-if [[ "$REQUIRE_MZ" = "yes" ]]; then
-	require_command $MZ
 fi
 if [[ "$REQUIRE_TEAMD" = "yes" ]]; then
 	require_command $TEAMD

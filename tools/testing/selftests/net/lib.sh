@@ -15,6 +15,11 @@ source "$net_dir/lib/sh/defer.sh"
 # Whether to pause on after a failure.
 : "${PAUSE_ON_FAIL:=no}"
 
+# Packet generator.
+: "${MZ:=mausezahn}"	# Some distributions use 'mz'.
+: "${MZ_DELAY:=0}"
+: "${REQUIRE_MZ:=no}"
+
 BUSYWAIT_TIMEOUT=$((WAIT_TIMEOUT * 1000)) # ms
 
 # Kselftest framework constants.
@@ -602,3 +607,7 @@ bridge_vlan_add()
 	bridge vlan add "$@"
 	defer bridge vlan del "$@"
 }
+
+if [[ "$REQUIRE_MZ" = "yes" ]]; then
+	require_command $MZ
+fi
