@@ -15,6 +15,11 @@ source "$net_dir/lib/sh/defer.sh"
 # Whether to pause on after a failure.
 : "${PAUSE_ON_FAIL:=no}"
 
+# Packet generator.
+: "${MZ:=mausezahn}"	# Some distributions use 'mz'.
+: "${MZ_DELAY:=0}"
+: "${REQUIRE_MZ:=no}"
+
 BUSYWAIT_TIMEOUT=$((WAIT_TIMEOUT * 1000)) # ms
 
 # Kselftest framework constants.
@@ -453,12 +458,21 @@ kill_process()
 	{ kill $pid && wait $pid; } 2>/dev/null
 }
 
-require_command()
+check_command()
 {
 	local cmd=$1; shift
 
 	if [[ ! -x "$(command -v "$cmd")" ]]; then
 		log_test_skip "$cmd not installed"
+		return $EXIT_STATUS
+	fi
+}
+
+require_command()
+{
+	local cmd=$1; shift
+
+	if ! check_command "$cmd"; then
 		exit $EXIT_STATUS
 	fi
 }
@@ -593,3 +607,7 @@ bridge_vlan_add()
 	bridge vlan add "$@"
 	defer bridge vlan del "$@"
 }
+
+if [[ "$REQUIRE_MZ" = "yes" ]]; then
+	require_command $MZ
+fi
