@@ -1863,8 +1863,8 @@ static bool ipmr_forward_offloaded(struct sk_buff *skb, struct mr_table *mrt,
 
 /* Processing handlers for ipmr_forward, under rcu_read_lock() */
 
-static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
-			    int in_vifi, struct sk_buff *skb, int vifi)
+static int ipmr_prepare_xmit(struct net *net, struct mr_table *mrt,
+			     struct sk_buff *skb, int vifi)
 {
 	const struct iphdr *iph = ip_hdr(skb);
 	struct vif_device *vif = &mrt->vif_table[vifi];
@@ -1875,7 +1875,7 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 
 	vif_dev = vif_dev_read(vif);
 	if (!vif_dev)
-		goto out_free;
+		return -1;
 
 	if (vif->flags & VIFF_REGISTER) {
 		WRITE_ONCE(vif->pkt_out, vif->pkt_out + 1);
@@ -1883,11 +1883,8 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 		DEV_STATS_ADD(vif_dev, tx_bytes, skb->len);
 		DEV_STATS_INC(vif_dev, tx_packets);
 		ipmr_cache_report(mrt, skb, vifi, IGMPMSG_WHOLEPKT);
-		goto out_free;
+		return -1;
 	}
-
-	if (ipmr_forward_offloaded(skb, mrt, in_vifi, vifi))
-		goto out_free;
 
 	if (vif->flags & VIFF_TUNNEL) {
 		rt = ip_route_output_ports(net, &fl4, NULL,
@@ -1896,7 +1893,7 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 					   IPPROTO_IPIP,
 					   iph->tos & INET_DSCP_MASK, vif->link);
 		if (IS_ERR(rt))
-			goto out_free;
+			return -1;
 		encap = sizeof(struct iphdr);
 	} else {
 		rt = ip_route_output_ports(net, &fl4, NULL, iph->daddr, 0,
@@ -1904,7 +1901,7 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 					   IPPROTO_IPIP,
 					   iph->tos & INET_DSCP_MASK, vif->link);
 		if (IS_ERR(rt))
-			goto out_free;
+			return -1;
 	}
 
 	if (skb->len+encap > dst_mtu(&rt->dst) && (ntohs(iph->frag_off) & IP_DF)) {
@@ -1914,14 +1911,14 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 		 */
 		IP_INC_STATS(net, IPSTATS_MIB_FRAGFAILS);
 		ip_rt_put(rt);
-		goto out_free;
+		return -1;
 	}
 
 	encap += LL_RESERVED_SPACE(rt->dst.dev) + rt->dst.header_len;
 
 	if (skb_cow(skb, encap)) {
 		ip_rt_put(rt);
-		goto out_free;
+		return -1;
 	}
 
 	WRITE_ONCE(vif->pkt_out, vif->pkt_out + 1);
@@ -1940,6 +1937,22 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 		DEV_STATS_INC(vif_dev, tx_packets);
 		DEV_STATS_ADD(vif_dev, tx_bytes, skb->len);
 	}
+
+	return 0;
+}
+
+static void ipmr_queue_fwd_xmit(struct net *net, struct mr_table *mrt,
+				int in_vifi, struct sk_buff *skb, int vifi)
+{
+	struct rtable *rt;
+
+	if (ipmr_forward_offloaded(skb, mrt, in_vifi, vifi))
+		goto out_free;
+
+	if (ipmr_prepare_xmit(net, mrt, skb, vifi))
+		goto out_free;
+
+	rt = skb_rtable(skb);
 
 	IPCB(skb)->flags |= IPSKB_FORWARDED;
 
@@ -2072,8 +2085,8 @@ forward:
 				struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
 				if (skb2)
-					ipmr_queue_xmit(net, mrt, true_vifi,
-							skb2, psend);
+					ipmr_queue_fwd_xmit(net, mrt, true_vifi,
+							    skb2, psend);
 			}
 			psend = ct;
 		}
@@ -2084,10 +2097,10 @@ last_forward:
 			struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
 			if (skb2)
-				ipmr_queue_xmit(net, mrt, true_vifi, skb2,
-						psend);
+				ipmr_queue_fwd_xmit(net, mrt, true_vifi, skb2,
+						    psend);
 		} else {
-			ipmr_queue_xmit(net, mrt, true_vifi, skb, psend);
+			ipmr_queue_fwd_xmit(net, mrt, true_vifi, skb, psend);
 			return;
 		}
 	}
