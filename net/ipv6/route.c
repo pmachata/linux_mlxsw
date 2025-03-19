@@ -1129,7 +1129,8 @@ static void ip6_rt_init_dst_reject(struct rt6_info *rt, u8 fib6_type)
 	}
 }
 
-static void ip6_rt_init_dst(struct rt6_info *rt, const struct fib6_result *res)
+static void ip6_rt_init_dst(struct rt6_info *rt, const struct net_device *dev,
+			    const struct fib6_result *res)
 {
 	struct fib6_info *f6i = res->f6i;
 
@@ -1145,6 +1146,7 @@ static void ip6_rt_init_dst(struct rt6_info *rt, const struct fib6_result *res)
 		rt->dst.input = ip6_input;
 	} else if (ipv6_addr_type(&f6i->fib6_dst.addr) & IPV6_ADDR_MULTICAST) {
 		rt->dst.input = ip6_mc_input;
+		rt->dst.output = ip6_mr_output;
 	} else {
 		rt->dst.input = ip6_forward;
 	}
@@ -1172,7 +1174,7 @@ static void ip6_rt_copy_init(struct rt6_info *rt, const struct fib6_result *res)
 	const struct net_device *dev = nh->fib_nh_dev;
 	struct fib6_info *f6i = res->f6i;
 
-	ip6_rt_init_dst(rt, res);
+	ip6_rt_init_dst(rt, dev, res);
 
 	rt->rt6i_dst = f6i->fib6_dst;
 	rt->rt6i_idev = dev ? in6_dev_get(dev) : NULL;
@@ -3551,7 +3553,8 @@ static bool fib6_is_reject(u32 flags, struct net_device *dev, int addr_type)
 {
 	if ((flags & RTF_REJECT) ||
 	    (dev && (dev->flags & IFF_LOOPBACK) &&
-	     !(addr_type & IPV6_ADDR_LOOPBACK) &&
+	     !(addr_type & (IPV6_ADDR_LOOPBACK |
+			    IPV6_ADDR_MULTICAST)) &&
 	     !(flags & (RTF_ANYCAST | RTF_LOCAL))))
 		return true;
 
