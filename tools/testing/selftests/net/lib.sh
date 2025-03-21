@@ -669,3 +669,27 @@ cmd_jq()
 	# return success only in case of non-empty output
 	[ ! -z "$output" ]
 }
+
+autodefer()
+{
+	local -a primary_args
+	local -a defer_args
+	local arg
+	local i=0
+
+	for arg in "$@"; do
+		if [[ "$arg" == *///* ]]; then
+			local prim=${arg//\/\/\/*/}
+			local dfr=${arg//*\/\/\//}
+			primary_args[$i]="$prim"
+			defer_args[$i]="$dfr"
+		else
+			primary_args[$i]="$arg"
+			defer_args[$i]="$arg"
+		fi
+		((i++))
+	done
+
+	"${primary_args[@]}"
+	defer "${defer_args[@]}"
+}
