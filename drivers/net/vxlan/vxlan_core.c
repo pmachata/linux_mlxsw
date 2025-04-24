@@ -3412,6 +3412,7 @@ static const struct nla_policy vxlan_policy[IFLA_VXLAN_MAX + 1] = {
 	[IFLA_VXLAN_LABEL_POLICY]       = NLA_POLICY_MAX(NLA_U32, VXLAN_LABEL_MAX),
 	[IFLA_VXLAN_RESERVED_BITS] = NLA_POLICY_EXACT_LEN(sizeof(struct vxlanhdr)),
 	[IFLA_VXLAN_MC_ROUTE]		= NLA_POLICY_MAX(NLA_U8, 1),
+	[IFLA_VXLAN_MC_NODEV]		= NLA_POLICY_MAX(NLA_U8, 1),
 };
 
 static int vxlan_validate(struct nlattr *tb[], struct nlattr *data[],
@@ -3927,6 +3928,13 @@ static int vxlan_dev_configure(struct net *src_net, struct net_device *dev,
 	return 0;
 }
 
+int vxlan_out_ifindex(int flags, const union vxlan_addr *ipa, int ifindex)
+{
+	if (flags & VXLAN_F_MC_NODEV && vxlan_addr_multicast(ipa))
+		return 0;
+	return ifindex;
+}
+
 static int __vxlan_dev_create(struct net *net, struct net_device *dev,
 			      struct vxlan_config *conf,
 			      struct netlink_ext_ack *extack)
@@ -3976,7 +3984,9 @@ static int __vxlan_dev_create(struct net *net, struct net_device *dev,
 				       vxlan->cfg.dst_port,
 				       dst->remote_vni,
 				       dst->remote_vni,
-				       dst->remote_ifindex,
+				       vxlan_out_ifindex(vxlan->cfg.flags,
+							 &dst->remote_ip,
+							 dst->remote_ifindex),
 				       NTF_SELF, 0, true, extack);
 		spin_unlock_bh(&vxlan->hash_lock);
 		if (err)
@@ -4333,6 +4343,14 @@ static int vxlan_nl2conf(struct nlattr *tb[], struct nlattr *data[],
 			return err;
 	}
 
+	if (data[IFLA_VXLAN_MC_NODEV]) {
+		err = vxlan_nl2flag(conf, data, IFLA_VXLAN_MC_NODEV,
+				    VXLAN_F_MC_NODEV, changelink,
+				    false, extack);
+		if (err)
+			return err;
+	}
+
 	if (tb[IFLA_MTU]) {
 		if (changelink) {
 			NL_SET_ERR_MSG_ATTR(extack, tb[IFLA_MTU],
@@ -4389,6 +4407,7 @@ static int vxlan_changelink(struct net_device *dev, struct nlattr *tb[],
 	struct net_device *lowerdev;
 	struct vxlan_config conf;
 	struct vxlan_rdst *dst;
+	int ifindex;
 	int err;
 
 	dst = &vxlan->default_dst;
@@ -4418,13 +4437,14 @@ static int vxlan_changelink(struct net_device *dev, struct nlattr *tb[],
 	if (rem_ip_changed) {
 		spin_lock_bh(&vxlan->hash_lock);
 		if (!vxlan_addr_any(&conf.remote_ip)) {
+			ifindex = vxlan_out_ifindex(conf.flags, &conf.remote_ip,
+						    conf.remote_ifindex);
 			err = vxlan_fdb_update(vxlan, all_zeros_mac,
 					       &conf.remote_ip,
 					       NUD_REACHABLE | NUD_PERMANENT,
 					       NLM_F_APPEND | NLM_F_CREATE,
 					       vxlan->cfg.dst_port,
-					       conf.vni, conf.vni,
-					       conf.remote_ifindex,
+					       conf.vni, conf.vni, ifindex,
 					       NTF_SELF, 0, true, extack);
 			if (err) {
 				spin_unlock_bh(&vxlan->hash_lock);
@@ -4433,14 +4453,17 @@ static int vxlan_changelink(struct net_device *dev, struct nlattr *tb[],
 				return err;
 			}
 		}
-		if (!vxlan_addr_any(&dst->remote_ip))
+		if (!vxlan_addr_any(&dst->remote_ip)) {
+			ifindex = vxlan_out_ifindex(vxlan->cfg.flags,
+						    &dst->remote_ip,
+						    dst->remote_ifindex);
 			__vxlan_fdb_delete(vxlan, all_zeros_mac,
 					   dst->remote_ip,
 					   vxlan->cfg.dst_port,
 					   dst->remote_vni,
 					   dst->remote_vni,
-					   dst->remote_ifindex,
-					   true);
+					   ifindex, true);
+		}
 		spin_unlock_bh(&vxlan->hash_lock);
 
 		/* If vni filtering device, also update fdb entries of
