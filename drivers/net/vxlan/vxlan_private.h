@@ -202,6 +202,7 @@ void vxlan_xmit_one(struct sk_buff *skb, struct net_device *dev,
 		    __be32 default_vni, struct vxlan_rdst *rdst, bool did_rsc);
 int vxlan_vni_in_use(struct net *src_net, struct vxlan_dev *vxlan,
 		     struct vxlan_config *conf, __be32 vni);
+int vxlan_out_ifindex(int flags, const union vxlan_addr *ipa, int ifindex);
 
 /* vxlan_vnifilter.c */
 int vxlan_vnigroup_init(struct vxlan_dev *vxlan);
