@@ -55,7 +55,7 @@ source lib.sh
 : "${VXPORT:=4789}"
 : "${GROUP4:=233.252.0.1}"
 : "${GROUP6:=ff0e::1:2:3}"
-IPMR=lo10
+: "${IPMR:=lo}"
 
 h1_create()
 {
@@ -124,7 +124,9 @@ switch_create()
 	ip_link_set_up br1
 
 	# IPMR
-	ip_link_add "$IPMR" up type dummy
+	if [[ $IPMR != lo ]]; then
+		ip_link_add "$IPMR" up type dummy
+	fi
 	ip_addr_add "$IPMR" 192.0.2.100/28
 	ip_addr_add "$IPMR" 2001:db8:4::1/64
 
