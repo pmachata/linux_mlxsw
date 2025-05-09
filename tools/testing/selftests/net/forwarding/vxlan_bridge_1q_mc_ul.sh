@@ -39,6 +39,7 @@ ALL_TESTS="
 	ipv4_mcroute_fdb
 	ipv4_mcroute_mcdev
 	ipv4_mcroute_nomcdev
+	ipv4_mcroute_nomcdev_lo
 
 	ipv6_nomcroute
 	ipv6_mcroute
@@ -47,6 +48,7 @@ ALL_TESTS="
 	ipv6_mcroute_fdb
 	ipv6_mcroute_mcdev
 	ipv6_mcroute_nomcdev
+	ipv6_mcroute_nomcdev_lo
 "
 
 NUM_NETIFS=6
@@ -198,6 +200,17 @@ adf_install_starg()
 
 	mc_cli add "$IPMR" :: $GROUP6 $swp2 $swp3
 	defer mc_cli remove "$IPMR" :: $GROUP6 $swp2 $swp3
+}
+
+adf_install_sg_lo()
+{
+	adf_mcd_start lo || exit $EXIT_STATUS
+
+	mc_cli add lo 192.0.2.100 $GROUP4 $swp2 $swp3
+	defer mc_cli remove lo 192.0.2.33 $GROUP4 $swp2 $swp3
+
+	mc_cli add lo 2001:db8:5::1 $GROUP6 $swp2 $swp3
+	defer mc_cli remove lo 2001:db8:5::1 $GROUP6 $swp2 $swp3
 }
 
 do_test()
@@ -354,6 +367,30 @@ ipv6_mcroute_nomcdev()
 	vx_create vx10 id 1000 \
 		local 2001:db8:4::1 group $GROUP6 dev $swp2 mcroute nomcdev
 	do_test 2001:db8:1::1 2001:db8:1::2 -6 106 10 10 "IPv6 mcroute nomcdev"
+}
+
+ipv4_mcroute_nomcdev_lo()
+{
+	ip route add table local multicast 224.0.0.0/4 dev lo
+	defer ip route del table local multicast 224.0.0.0/4 dev lo
+
+	ip_addr_add lo 192.0.2.100/28
+
+	xxx
+}
+
+ipv6_mcroute_nomcdev_lo()
+{
+	ip -6 route add table local multicast ff00::/8 dev lo
+	defer ip -6 route del table local multicast ff00::/8 dev lo
+
+	adf_install_sg_lo
+
+	ip_addr_add lo 2001:db8:5::1/64
+
+	vx_create vx10 id 1000 \
+		local 2001:db8:5::1 group $GROUP6 dev "$IPMR" mcroute nomcdev
+	do_test 2001:db8:1::1 2001:db8:1::2 -6 106 10 10 "IPv6 mcroute nomcdev lo"
 }
 
 trap cleanup EXIT
