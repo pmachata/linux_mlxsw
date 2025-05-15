@@ -37,6 +37,8 @@ ALL_TESTS="
 	ipv4_mcroute_starg
 	ipv4_mcroute_noroute
 	ipv4_mcroute_fdb
+	ipv4_mcroute_fdb_oif0
+	ipv4_mcroute_fdb_oif0_lo
 	ipv4_mcroute_mcdev
 	ipv4_mcroute_nomcdev
 	ipv4_mcroute_nomcdev_lo
@@ -46,6 +48,7 @@ ALL_TESTS="
 	ipv6_mcroute_starg
 	ipv6_mcroute_noroute
 	ipv6_mcroute_fdb
+	ipv6_mcroute_fdb_oif0
 	ipv6_mcroute_mcdev
 	ipv6_mcroute_nomcdev
 	ipv6_mcroute_nomcdev_lo
@@ -206,8 +209,8 @@ adf_install_sg_lo()
 {
 	adf_mcd_start lo || exit $EXIT_STATUS
 
-	mc_cli add lo 192.0.2.100 $GROUP4 $swp2 $swp3
-	defer mc_cli remove lo 192.0.2.33 $GROUP4 $swp2 $swp3
+	mc_cli add lo 192.0.2.120 $GROUP4 $swp2 $swp3
+	defer mc_cli remove lo 192.0.2.120 $GROUP4 $swp2 $swp3
 
 	mc_cli add lo 2001:db8:5::1 $GROUP6 $swp2 $swp3
 	defer mc_cli remove lo 2001:db8:5::1 $GROUP6 $swp2 $swp3
@@ -330,8 +333,49 @@ ipv6_mcroute_fdb()
 	vx_create vx10 id 1000 \
 		local 2001:db8:4::1 dev "$IPMR" mcroute
 	bridge -6 fdb add dev vx10 \
-		00:00:00:00:00:00 self static dst $GROUP6
+		00:00:00:00:00:00 self static dst $GROUP6 via "$IPMR"
 	do_test 2001:db8:1::1 2001:db8:1::2 -6 106 10 10 "IPv6 mcroute FDB"
+}
+
+# Use FDB to configure VXLAN in a way where oif=0 for purposes of FIB lookup.
+ipv4_mcroute_fdb_oif0v()
+{
+	adf_install_sg
+	vx_create vx10 id 1000 \
+		local 192.0.2.100 dev "$IPMR" mcroute
+	bridge fdb add dev vx10 \
+		00:00:00:00:00:00 self static dst $GROUP4
+	do_test 192.0.2.1 192.0.2.2 "" 104 10 10 "IPv4 mcroute iif=0"
+}
+
+ipv6_mcroute_fdb_oif0v()
+{
+	adf_install_sg
+	vx_create vx10 id 1000 \
+		local 2001:db8:4::1 dev "$IPMR" mcroute
+	bridge -6 fdb add dev vx10 \
+		00:00:00:00:00:00 self static dst $GROUP6
+	do_test 2001:db8:1::1 2001:db8:1::2 -6 106 10 10 "IPv6 mcroute iif=0"
+}
+
+# In oif=0 test as above, have FIB lookup resolve to loopback instead of IPMR.
+# This doesn't work with IPv6 -- the tunnel lookup simply does a FIB match and
+# does not fall back to source address lookup, so what netdevice ends up being
+# used is unpredictable.
+ipv4_mcroute_fdb_oif0_lo()
+{
+	ip route add table local multicast 224.0.0.0/4 dev lo
+	defer ip route del table local multicast 224.0.0.0/4 dev lo
+
+	adf_install_sg_lo
+
+	ip_addr_add lo 192.0.2.120/28
+	vx_create vx10 id 1000 \
+		local 192.0.2.120 dev "$IPMR" mcroute
+	bridge fdb add dev vx10 \
+		00:00:00:00:00:00 self static dst $GROUP4
+
+	do_test 192.0.2.1 192.0.2.2 "" 104 10 10 "IPv4 mcroute iif=0 loopback"
 }
 
 # For mcdev / nomcdev tests, use $swp2 as the VXLAN bound device and expect H3
