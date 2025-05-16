@@ -102,6 +102,9 @@ ALL_TESTS="
 	ipv6_mcroute_noroute
 	ipv6_mcroute_fdb
 	ipv6_mcroute_fdb_oif0
+	ipv6_mcroute_mcdev
+	ipv6_mcroute_nomcdev
+	ipv6_mcroute_nomcdev_sep
 
 	ipv4_nomcroute_rx
 	ipv4_mcroute_rx
@@ -751,6 +754,21 @@ ipv6_mcroute_fdb_sep_rx()
 	ipv6_do_test_rx 0 "IPv6 mcroute TX!=RX ping"
 }
 
+ipv6_mcroute_fdb_oif0_sep()
+{
+	ip -6 route add table local multicast ff00::/8 dev lo
+	defer ip -6 route del table local multicast ff00::/8 dev lo
+
+	adf_install_sg_sep
+
+	ip_addr_add lo 2001:db8:5::1/64
+
+	vx20_create_wait local 2001:db8:5::1 dev lo mcroute
+	bridge -6 fdb add dev vx20 \
+		00:00:00:00:00:00 self static dst $GROUP6
+	do_test 6 10 10 "IPv6 mcroute TX!=RX oif=0"
+}
+
 # For mcdev / nomcdev tests, use $swp2 as the VXLAN bound device and expect H3
 # to not get hit. But with nomcdev, expect $IPMR to get picked up for TX and
 # packets be MC-routed to H3 as well.
@@ -779,6 +797,33 @@ ipv4_mcroute_nomcdev_sep()
 	vx10_create_wait local 192.0.2.120 group $GROUP4 dev "$IPMR" mcroute nomcdev
 
 	do_test 4 10 10 "IPv4 dev swp mcroute nomcdev lo"
+}
+
+ipv6_mcroute_mcdev()
+{
+	adf_install_sg
+	vx20_create_wait local 2001:db8:4::1 group $GROUP6 dev $swp2 mcroute mcdev
+	do_test 6 10 0 "IPv6 mcroute mcdev"
+}
+
+ipv6_mcroute_nomcdev()
+{
+	adf_install_sg
+	vx20_create_wait local 2001:db8:4::1 group $GROUP6 dev $swp2 mcroute nomcdev
+	do_test 6 10 10 "IPv6 mcroute nomcdev"
+}
+
+ipv6_mcroute_nomcdev_sep()
+{
+	ip -6 route add table local multicast ff00::/8 dev lo
+	defer ip -6 route del table local multicast ff00::/8 dev lo
+
+	adf_install_sg_sep
+
+	ip_addr_add lo 2001:db8:5::1/64
+
+	vx20_create_wait local 2001:db8:5::1 group $GROUP6 dev "$IPMR" mcroute nomcdev
+	do_test 6 10 10 "IPv6 mcroute nomcdev lo"
 }
 
 trap cleanup EXIT
