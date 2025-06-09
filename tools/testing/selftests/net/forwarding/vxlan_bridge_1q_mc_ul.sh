@@ -211,7 +211,7 @@ switch_create()
 
 	# br1
 	swp1_mac=$(mac_get "$swp1")
-	ip_link_add br1 type bridge vlan_filtering 1 \
+	ip_link_add br1 type bridge vlan_filtering 1 vlan_stats_enabled 1 \
 			    vlan_default_pvid 0 mcast_snooping 0
 	ip_link_set_addr br1 "$swp1_mac"
 	ip_link_set_up br1

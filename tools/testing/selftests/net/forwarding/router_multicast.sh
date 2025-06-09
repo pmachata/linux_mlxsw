@@ -214,34 +214,31 @@ mcast_v4()
 
 	RET=0
 
+	tc filter add dev $h1 ingress protocol ip pref 1 handle 111 flower \
+		dst_ip 225.1.2.3 action drop
 	tc filter add dev $h2 ingress protocol ip pref 1 handle 122 flower \
 		dst_ip 225.1.2.3 action drop
 	tc filter add dev $h3 ingress protocol ip pref 1 handle 133 flower \
 		dst_ip 225.1.2.3 action drop
 
-	create_mcast_sg $rp1 198.51.100.2 225.1.2.3 $rp2 $rp3
+	create_mcast_sg $rp1 198.51.100.2 225.1.2.3 $rp1 $rp2 $rp3
 
 	# Send frames with the corresponding L2 destination address.
 	$MZ $h1 -c 5 -p 128 -t udp -a 00:11:22:33:44:55 -b 01:00:5e:01:02:03 \
 		-A 198.51.100.2 -B 225.1.2.3 -q
 
+	tc_check_packets "dev $h1 ingress" 111 5
+	check_err $? "Multicast not received on zeroth host"
 	tc_check_packets "dev $h2 ingress" 122 5
 	check_err $? "Multicast not received on first host"
 	tc_check_packets "dev $h3 ingress" 133 5
 	check_err $? "Multicast not received on second host"
 
-	delete_mcast_sg $rp1 198.51.100.2 225.1.2.3 $rp2 $rp3
-
-	$MZ $h1 -c 5 -p 128 -t udp -a 00:11:22:33:44:55 -b 01:00:5e:01:02:03 \
-		-A 198.51.100.2 -B 225.1.2.3 -q
-
-	tc_check_packets "dev $h2 ingress" 122 5
-	check_err $? "Multicast received on host although deleted"
-	tc_check_packets "dev $h3 ingress" 133 5
-	check_err $? "Multicast received on second host although deleted"
+	delete_mcast_sg $rp1 198.51.100.2 225.1.2.3 $rp1 $rp2 $rp3
 
 	tc filter del dev $h3 ingress protocol ip pref 1 handle 133 flower
 	tc filter del dev $h2 ingress protocol ip pref 1 handle 122 flower
+	tc filter del dev $h1 ingress protocol ip pref 1 handle 111 flower
 
 	log_test "mcast IPv4"
 }
