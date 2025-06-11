@@ -27,6 +27,7 @@ ALL_TESTS="
 	ipv4_sip_equal_dip
 	ipv6_sip_equal_dip
 	ipv4_dip_link_local
+	ipv4_sip_link_local
 "
 
 NUM_NETIFS=4
@@ -328,6 +329,26 @@ ipv4_dip_link_local()
 	ip route del 169.254.1.0/24 dev $rp2
 	ip neigh del 169.254.1.1 lladdr 00:11:22:33:44:55 dev $rp2
 	tc filter del dev $rp2 egress protocol ip pref 1 handle 101 flower
+}
+
+ipv4_sip_link_local()
+{
+	local sip=169.254.1.1
+
+	RET=0
+
+	tc filter add dev "$rp2" egress protocol ip pref 1 handle 101 \
+		flower src_ip "$sip" action pass
+
+	$MZ "$h1" -t udp "sp=54321,dp=12345" -c 5 -d 1msec -b "$rp1mac" \
+		-A "$sip" -B 198.51.100.2 -q
+
+	tc_check_packets "dev $rp2 egress" 101 5
+	check_err $? "Packets were dropped"
+
+	log_test "IPv4 source IP is link-local"
+
+	tc filter del dev "$rp2" egress protocol ip pref 1 handle 101 flower
 }
 
 trap cleanup EXIT
