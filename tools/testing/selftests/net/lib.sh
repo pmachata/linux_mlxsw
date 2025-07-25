@@ -645,3 +645,24 @@ wait_local_port_listen()
 		sleep 0.1
 	done
 }
+
+declare -A __MEMOIZE__OUTPUT
+declare -A __MEMOIZE__EXIT
+memoize()
+{
+	local command=$1; shift
+
+	local has=${__MEMOIZE__EXIT["$command"]+yes}
+	local exit=${__MEMOIZE__EXIT[$command]}
+	local output=${__MEMOIZE__OUTPUT[$command]}
+
+	if [[ "$has" == yes ]]; then
+		echo -n "$output"
+		return "$exit"
+	fi
+
+	__MEMOIZE__OUTPUT["$command"]=$($command)
+	exit=$?
+	__MEMOIZE__EXIT["$command"]="$exit"
+	return "$exit"
+}
