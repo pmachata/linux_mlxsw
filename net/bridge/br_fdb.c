@@ -1050,6 +1050,11 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 	}
 }
 
+extern u8 global_ndm_flags;
+extern u8 global_ndm_flags_mask;
+extern u8 global_ndm_state;
+extern u8 global_ndm_state_mask;
+
 /* Dump information about entries, in response to GETNEIGH */
 int br_fdb_dump(struct sk_buff *skb,
 		struct netlink_callback *cb,
@@ -1060,10 +1065,17 @@ int br_fdb_dump(struct sk_buff *skb,
 	struct ndo_fdb_dump_context *ctx = (void *)cb->ctx;
 	struct net_bridge *br = netdev_priv(dev);
 	struct net_bridge_fdb_entry *f;
+	unsigned long flags_mask;
+	unsigned long flags;
 	int err = 0;
 
 	if (!netif_is_bridge_master(dev))
 		return err;
+
+	flags = __ndm_flags_to_fdb_flags(global_ndm_flags);
+	flags_mask = __ndm_flags_to_fdb_flags(global_ndm_flags_mask);
+	flags |= __ndm_state_to_fdb_flags(global_ndm_state);
+	flags_mask |= __ndm_state_to_fdb_flags(global_ndm_state_mask);
 
 	if (!filter_dev) {
 		err = ndo_dflt_fdb_dump(skb, cb, dev, NULL, idx);
@@ -1087,6 +1099,8 @@ int br_fdb_dump(struct sk_buff *skb,
 				goto skip;
 		}
 		if (!filter_dev && f->dst)
+			goto skip;
+		if (flags_mask && (f->flags & flags_mask) != flags)
 			goto skip;
 
 		err = fdb_fill_info(skb, br, f,

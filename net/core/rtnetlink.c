@@ -4869,6 +4869,8 @@ EXPORT_SYMBOL(ndo_dflt_fdb_dump);
 
 static int valid_fdb_dump_strict(const struct nlmsghdr *nlh,
 				 int *br_idx, int *brport_idx,
+				 u8 *ndm_flags, u8 *ndm_flags_mask,
+				 u16 *ndm_state, u16 *ndm_state_mask,
 				 struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[NDA_MAX + 1];
@@ -4881,11 +4883,13 @@ static int valid_fdb_dump_strict(const struct nlmsghdr *nlh,
 		return -EINVAL;
 	}
 
-	if (ndm->ndm_pad1  || ndm->ndm_pad2  || ndm->ndm_state ||
-	    ndm->ndm_flags || ndm->ndm_type) {
+	if (ndm->ndm_pad1  || ndm->ndm_pad2  || ndm->ndm_type) {
 		NL_SET_ERR_MSG(extack, "Invalid values in header for fdb dump request");
 		return -EINVAL;
 	}
+
+	*ndm_flags = *ndm_flags_mask = ndm->ndm_flags;
+	*ndm_state = *ndm_state_mask = ndm->ndm_state;
 
 	err = nlmsg_parse_deprecated_strict(nlh, sizeof(struct ndmsg), tb,
 					    NDA_MAX, NULL, extack);
@@ -4911,6 +4915,23 @@ static int valid_fdb_dump_strict(const struct nlmsghdr *nlh,
 				return -EINVAL;
 			}
 			*br_idx = nla_get_u32(tb[NDA_MASTER]);
+			break;
+		case NDA_NDM_FLAGS_MASK:
+			if (nla_len(tb[i]) != sizeof(u8)) {
+				// xxx this is ripe for conversion to a policy
+				// but then the whole thing needs to be
+				// restructured, this should be parsed in bridge
+				NL_SET_ERR_MSG(extack, "Invalid NDM_FLAGS_MASK attribute in fdb dump request");
+				return -EINVAL;
+			}
+			*ndm_flags_mask = nla_get_u8(tb[NDA_NDM_FLAGS_MASK]);
+			break;
+		case NDA_NDM_STATE_MASK:
+			if (nla_len(tb[i]) != sizeof(u16)) {
+				NL_SET_ERR_MSG(extack, "Invalid NDM_STATE_MASK attribute in fdb dump request");
+				return -EINVAL;
+			}
+			*ndm_state_mask = nla_get_u16(tb[NDA_NDM_STATE_MASK]);
 			break;
 		default:
 			NL_SET_ERR_MSG(extack, "Unsupported attribute in fdb dump request");
@@ -4956,13 +4977,29 @@ static int valid_fdb_dump_legacy(const struct nlmsghdr *nlh,
 	return 0;
 }
 
+u8 global_ndm_flags;
+EXPORT_SYMBOL_GPL(global_ndm_flags);
+
+u8 global_ndm_flags_mask;
+EXPORT_SYMBOL_GPL(global_ndm_flags_mask);
+
+u8 global_ndm_state;
+EXPORT_SYMBOL_GPL(global_ndm_state);
+
+u8 global_ndm_state_mask;
+EXPORT_SYMBOL_GPL(global_ndm_state_mask);
+
 static int rtnl_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	const struct net_device_ops *ops = NULL, *cops = NULL;
 	struct ndo_fdb_dump_context *ctx = (void *)cb->ctx;
 	struct net_device *dev, *br_dev = NULL;
 	struct net *net = sock_net(skb->sk);
+	u16 ndm_state_mask = 0;
+	u8 ndm_flags_mask = 0;
 	int brport_idx = 0;
+	u16 ndm_state = 0;
+	u8 ndm_flags = 0;
 	int br_idx = 0;
 	int fidx = 0;
 	int err;
@@ -4971,6 +5008,8 @@ static int rtnl_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb)
 
 	if (cb->strict_check)
 		err = valid_fdb_dump_strict(cb->nlh, &br_idx, &brport_idx,
+					    &ndm_flags, &ndm_flags_mask,
+					    &ndm_state, &ndm_state_mask,
 					    cb->extack);
 	else
 		err = valid_fdb_dump_legacy(cb->nlh, &br_idx, &brport_idx,
@@ -5008,18 +5047,27 @@ static int rtnl_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb)
 
 		if (netif_is_bridge_port(dev)) {
 			if (cops && cops->ndo_fdb_dump) {
+				global_ndm_flags = ndm_flags;
+				global_ndm_flags_mask = ndm_flags_mask;
+				global_ndm_state = ndm_state;
+				global_ndm_state_mask = ndm_state_mask;
 				err = cops->ndo_fdb_dump(skb, cb, br_dev, dev,
-							&fidx);
+							 &fidx);
 				if (err == -EMSGSIZE)
 					break;
 			}
 		}
 
-		if (dev->netdev_ops->ndo_fdb_dump)
+		if (dev->netdev_ops->ndo_fdb_dump) {
+			global_ndm_flags = ndm_flags;
+			global_ndm_flags_mask = ndm_flags_mask;
+			global_ndm_state = ndm_state;
+			global_ndm_state_mask = ndm_state_mask;
 			err = dev->netdev_ops->ndo_fdb_dump(skb, cb, dev, NULL,
 							    &fidx);
-		else
+		} else {
 			err = ndo_dflt_fdb_dump(skb, cb, dev, NULL, &fidx);
+		}
 		if (err == -EMSGSIZE)
 			break;
 
