@@ -292,6 +292,7 @@ struct net_bridge_fdb_entry {
 
 	struct net_bridge_fdb_key	key;
 	struct hlist_node		fdb_node;
+	struct rb_node			fdb_rb_node;
 	unsigned long			flags;
 
 	/* write-heavy members should not affect lookups */
@@ -576,6 +577,7 @@ struct net_bridge {
 	unsigned long			busy_hwdoms;
 #endif
 	struct hlist_head		fdb_list;
+	struct rb_root			fdb_rb;
 
 #if IS_ENABLED(CONFIG_BRIDGE_MRP)
 	struct hlist_head		mrp_list;

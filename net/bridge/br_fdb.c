@@ -316,6 +316,7 @@ static void fdb_delete(struct net_bridge *br, struct net_bridge_fdb_entry *f,
 	if (test_bit(BR_FDB_STATIC, &f->flags))
 		fdb_del_hw_addr(br, f->key.addr.addr);
 
+	rb_erase(&f->fdb_rb_node, &br->fdb_rb);
 	hlist_del_init_rcu(&f->fdb_node);
 	rhashtable_remove_fast(&br->fdb_hash_tbl, &f->rhnode,
 			       br_fdb_rht_params);
@@ -379,6 +380,95 @@ void br_fdb_find_delete_local(struct net_bridge *br,
 	spin_unlock_bh(&br->hash_lock);
 }
 
+enum {
+	/* The RB tree iteration uses a u64 index to keep track of where it
+	 * paused. 0 needs to always mean a fresh start. We want to use that u64
+	 * to just be a struct net_bridge_fdb_key under disguise, but that then
+	 * means that an all-zero MAC on VLAN 0 couldn't be used as a paused-at
+	 * index. We therefore encode VLAN 0 to this VLAN ID when making the
+	 * index, and then decode back to 0 when making the key.
+	 */
+	BR_FDB_RB_KEY_UNUSED_VLAN = VLAN_N_VID - 1,
+};
+
+static struct net_bridge_fdb_key br_fdb_rb_idx_to_key(u64 fdb_idx)
+{
+	union {
+		struct net_bridge_fdb_key key;
+		u64 fdb_idx;
+	} u = { .fdb_idx = fdb_idx };
+
+	WARN_ON_ONCE(u.key.vlan_id == 0);
+	if (u.key.vlan_id == BR_FDB_RB_KEY_UNUSED_VLAN)
+		u.key.vlan_id = 0;
+
+	return u.key;
+}
+
+static u64 br_fdb_rb_key_to_idx(struct net_bridge_fdb_key key)
+{
+	BUILD_BUG_ON(sizeof(struct net_bridge_fdb_key) != sizeof(u64));
+	union {
+		struct net_bridge_fdb_key key;
+		u64 fdb_idx;
+	} u = { .key = key };
+
+	WARN_ON_ONCE(u.key.vlan_id == BR_FDB_RB_KEY_UNUSED_VLAN);
+	if (u.key.vlan_id == 0)
+		u.key.vlan_id = BR_FDB_RB_KEY_UNUSED_VLAN;
+
+	return u.fdb_idx;
+}
+
+static int br_fdb_rb_cmp(const struct net_bridge_fdb_key *a,
+			 const struct net_bridge_fdb_key *b)
+{
+	/* rtnetlink core is comparing indices as integers. If we used any other
+	 * ordering, the helpers called for the MC/BC address dump would be
+	 * confused and might skip some entries. The highest index will be
+	 * ff:ff:ff:ff:ff:ff|0f:fe or some such (MC/BC addresses can be kept by
+	 * FDB as well). That still leaves plenty of room to dump further
+	 * entries in one of the helpers.
+	 */
+	u64 ia = br_fdb_rb_key_to_idx(*a);
+	u64 ib = br_fdb_rb_key_to_idx(*b);
+
+	if (ia < ib)
+		return -1;
+	if (ia > ib)
+		return 1;
+	return 0;
+}
+
+static void br_fdb_rb_insert(struct net_bridge *br,
+			     struct net_bridge_fdb_entry *f)
+{
+	struct rb_node **new = &br->fdb_rb.rb_node;
+	struct rb_node *parent = NULL;
+
+	while (*new) {
+		struct net_bridge_fdb_entry *this_f;
+		int rc;
+
+		this_f = container_of(*new, struct net_bridge_fdb_entry,
+				      fdb_rb_node);
+		rc = br_fdb_rb_cmp(&f->key, &this_f->key);
+
+		parent = *new;
+		if (rc < 0) {
+			new = &(*new)->rb_left;
+		} else if (rc > 0) {
+			new = &(*new)->rb_right;
+		} else {
+			WARN_ONCE(1, "red-black insert: Duplicate FDB key");
+			return;
+		}
+	}
+
+	rb_link_node(&f->fdb_rb_node, parent, new);
+	rb_insert_color(&f->fdb_rb_node, &br->fdb_rb);
+}
+
 static struct net_bridge_fdb_entry *fdb_create(struct net_bridge *br,
 					       struct net_bridge_port *source,
 					       const unsigned char *addr,
@@ -419,6 +509,8 @@ static struct net_bridge_fdb_entry *fdb_create(struct net_bridge *br,
 		atomic_inc(&br->fdb_n_learned);
 
 	hlist_add_head_rcu(&fdb->fdb_node, &br->fdb_list);
+
+	br_fdb_rb_insert(br, fdb);
 
 	return fdb;
 }
@@ -1050,6 +1142,42 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 	}
 }
 
+static struct rb_node *br_fdb_rb_find(struct net_bridge *br, u64 fdb_idx)
+{
+	struct rb_node *node = br->fdb_rb.rb_node;
+	struct net_bridge_fdb_key key;
+	struct rb_node *prev = NULL;
+
+	if (!fdb_idx)
+		/* fdb_idx == 0 always means a fresh start. */
+		goto bail;
+
+	key = br_fdb_rb_idx_to_key(fdb_idx);
+
+	while (node) {
+		struct net_bridge_fdb_entry *this_f;
+		int rc;
+
+		this_f = container_of(node, struct net_bridge_fdb_entry,
+				      fdb_rb_node);
+		rc = br_fdb_rb_cmp(&key, &this_f->key);
+
+		prev = node;
+		if (rc < 0)
+			node = node->rb_left;
+		else if (rc > 0)
+			node = node->rb_right;
+		else
+			return rb_next(node);
+	}
+
+	if (prev)
+		return rb_next(prev);
+
+bail:
+	return rb_first(&br->fdb_rb);
+}
+
 /* Dump information about entries, in response to GETNEIGH */
 int br_fdb_dump(struct sk_buff *skb,
 		struct netlink_callback *cb,
@@ -1060,6 +1188,7 @@ int br_fdb_dump(struct sk_buff *skb,
 	struct ndo_fdb_dump_context *ctx = (void *)cb->ctx;
 	struct net_bridge *br = netdev_priv(dev);
 	struct net_bridge_fdb_entry *f;
+	struct rb_node *node;
 	int err = 0;
 
 	if (!netif_is_bridge_master(dev))
@@ -1071,10 +1200,13 @@ int br_fdb_dump(struct sk_buff *skb,
 			return err;
 	}
 
-	rcu_read_lock();
-	hlist_for_each_entry_rcu(f, &br->fdb_list, fdb_node) {
-		if (*idx < ctx->fdb_idx)
-			goto skip;
+	spin_lock_bh(&br->hash_lock);
+
+	for (node = br_fdb_rb_find(br, ctx->fdb_idx); node;
+	     node = rb_next(node)) {
+		f = container_of(node, struct net_bridge_fdb_entry,
+				 fdb_rb_node);
+
 		if (filter_dev && (!f->dst || f->dst->dev != filter_dev)) {
 			if (filter_dev != dev)
 				goto skip;
@@ -1097,9 +1229,10 @@ int br_fdb_dump(struct sk_buff *skb,
 		if (err < 0)
 			break;
 skip:
-		*idx += 1;
+		*idx = br_fdb_rb_key_to_idx(f->key);
 	}
-	rcu_read_unlock();
+
+	spin_unlock_bh(&br->hash_lock);
 
 	return err;
 }
