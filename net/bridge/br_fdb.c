@@ -1060,6 +1060,10 @@ int br_fdb_dump(struct sk_buff *skb,
 	struct ndo_fdb_dump_context *ctx = (void *)cb->ctx;
 	struct net_bridge *br = netdev_priv(dev);
 	struct net_bridge_fdb_entry *f;
+	static struct rhashtable_iter iter; // xxx
+	void *obj;
+	int fmtd = 0;
+
 	int err = 0;
 
 	if (!netif_is_bridge_master(dev))
@@ -1071,10 +1075,17 @@ int br_fdb_dump(struct sk_buff *skb,
 			return err;
 	}
 
+	if (ctx->fdb_idx == 0)
+		rhashtable_walk_enter(&br->fdb_hash_tbl, &iter);
+
 	rcu_read_lock();
-	hlist_for_each_entry_rcu(f, &br->fdb_list, fdb_node) {
-		if (*idx < ctx->fdb_idx)
-			goto skip;
+
+	rhashtable_walk_start(&iter);
+	*idx = ctx->fdb_idx;
+	while ((obj = rhashtable_walk_next(&iter))) {
+		if (IS_ERR(obj))
+			continue;
+		f = obj;
 		if (filter_dev && (!f->dst || f->dst->dev != filter_dev)) {
 			if (filter_dev != dev)
 				goto skip;
@@ -1096,10 +1107,19 @@ int br_fdb_dump(struct sk_buff *skb,
 				    NLM_F_MULTI);
 		if (err < 0)
 			break;
+		fmtd++;
+
 skip:
 		*idx += 1;
 	}
+	rhashtable_walk_stop(&iter);
+
 	rcu_read_unlock();
+
+	if (fmtd == 0) {
+		rhashtable_walk_exit(&iter);
+		memset(&iter, 0, sizeof(iter));
+	}
 
 	return err;
 }
