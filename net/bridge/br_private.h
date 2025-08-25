@@ -868,7 +868,7 @@ int br_fdb_add(struct ndmsg *nlh, struct nlattr *tb[], struct net_device *dev,
 	       const unsigned char *addr, u16 vid, u16 nlh_flags,
 	       bool *notified, struct netlink_ext_ack *extack);
 int br_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
-		struct net_device *dev, struct net_device *fdev, int *idx);
+		struct net_device *dev, struct net_device *fdev, u64 *idx);
 int br_fdb_get(struct sk_buff *skb, struct nlattr *tb[], struct net_device *dev,
 	       const unsigned char *addr, u16 vid, u32 portid, u32 seq,
 	       struct netlink_ext_ack *extack);

@@ -1288,9 +1288,13 @@ struct netdev_net_notifier {
  *			   struct netlink_ext_ack *extack);
  * int (*ndo_fdb_dump)(struct sk_buff *skb, struct netlink_callback *cb,
  *		       struct net_device *dev, struct net_device *filter_dev,
- *		       int *idx)
+ *		       u64 *idx)
  *	Used to add FDB entries to dump requests. Implementers should add
- *	entries to skb and update idx with the number of entries.
+ *	entries to skb and update idx with a restart index. The space of indices
+ *	can contain holes, but note that individual implementors need to use the
+ *	space compatibly. The default callbacks allocate indices linearly and
+ *	compare them using the < operator, so the space allocation should be
+ *	monotonously increasing.
  *
  * int (*ndo_mdb_add)(struct net_device *dev, struct nlattr *tb[],
  *		      u16 nlmsg_flags, struct netlink_ext_ack *extack);
@@ -1571,7 +1575,7 @@ struct net_device_ops {
 						struct netlink_callback *cb,
 						struct net_device *dev,
 						struct net_device *filter_dev,
-						int *idx);
+						u64 *idx);
 	int			(*ndo_fdb_get)(struct sk_buff *skb,
 					       struct nlattr *tb[],
 					       struct net_device *dev,

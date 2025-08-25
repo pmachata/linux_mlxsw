@@ -188,14 +188,14 @@ void rtnl_kfree_skbs(struct sk_buff *head, struct sk_buff *tail);
 /* Shared by rtnl_fdb_dump() and various ndo_fdb_dump() helpers. */
 struct ndo_fdb_dump_context {
 	unsigned long ifindex;
-	unsigned long fdb_idx;
+	u64 fdb_idx;
 };
 
 extern int ndo_dflt_fdb_dump(struct sk_buff *skb,
 			     struct netlink_callback *cb,
 			     struct net_device *dev,
 			     struct net_device *filter_dev,
-			     int *idx);
+			     u64 *idx);
 extern int ndo_dflt_fdb_add(struct ndmsg *ndm,
 			    struct nlattr *tb[],
 			    struct net_device *dev,

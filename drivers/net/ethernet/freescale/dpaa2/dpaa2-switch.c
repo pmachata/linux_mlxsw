@@ -903,7 +903,7 @@ static int dpaa2_switch_fdb_entry_dump(struct ethsw_port_priv *port_priv,
 
 static int dpaa2_switch_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 				      struct net_device *net_dev,
-				      struct net_device *filter_dev, int *idx)
+				      struct net_device *filter_dev, u64 *idx)
 {
 	struct ethsw_port_priv *port_priv = netdev_priv(net_dev);
 	struct ethsw_dump_ctx dump = {

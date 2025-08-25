@@ -427,7 +427,7 @@ static int qlcnic_fdb_add(struct ndmsg *ndm, struct nlattr *tb[],
 
 static int qlcnic_fdb_dump(struct sk_buff *skb, struct netlink_callback *ncb,
 			struct net_device *netdev,
-			struct net_device *filter_dev, int *idx)
+			struct net_device *filter_dev, u64 *idx)
 {
 	struct qlcnic_adapter *adapter = netdev_priv(netdev);
 	int err = 0;

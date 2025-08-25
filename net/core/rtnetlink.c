@@ -4815,7 +4815,7 @@ out:
 static int nlmsg_populate_fdb(struct sk_buff *skb,
 			      struct netlink_callback *cb,
 			      struct net_device *dev,
-			      int *idx,
+			      u64 *idx,
 			      struct netdev_hw_addr_list *list)
 {
 	struct ndo_fdb_dump_context *ctx = (void *)cb->ctx;
@@ -4857,7 +4857,7 @@ int ndo_dflt_fdb_dump(struct sk_buff *skb,
 		      struct netlink_callback *cb,
 		      struct net_device *dev,
 		      struct net_device *filter_dev,
-		      int *idx)
+		      u64 *idx)
 {
 	int err;
 
@@ -4972,7 +4972,7 @@ static int rtnl_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	struct net *net = sock_net(skb->sk);
 	int brport_idx = 0;
 	int br_idx = 0;
-	int fidx = 0;
+	u64 fidx = 0;
 	int err;
 
 	NL_ASSERT_CTX_FITS(struct ndo_fdb_dump_context);

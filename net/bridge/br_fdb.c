@@ -1055,7 +1055,7 @@ int br_fdb_dump(struct sk_buff *skb,
 		struct netlink_callback *cb,
 		struct net_device *dev,
 		struct net_device *filter_dev,
-		int *idx)
+		u64 *idx)
 {
 	struct ndo_fdb_dump_context *ctx = (void *)cb->ctx;
 	struct net_bridge *br = netdev_priv(dev);
