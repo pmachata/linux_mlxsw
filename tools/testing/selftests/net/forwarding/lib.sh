@@ -585,10 +585,10 @@ pre_cleanup()
 
 vrf_prepare()
 {
-	ip -4 rule add pref 32765 table local
-	ip -4 rule del pref 0
-	ip -6 rule add pref 32765 table local
-	ip -6 rule del pref 0
+	verbose_fail ip -4 rule add pref 32765 table local
+	verbose_fail ip -4 rule del pref 0
+	verbose_fail ip -6 rule add pref 32765 table local
+	verbose_fail ip -6 rule del pref 0
 }
 
 vrf_cleanup()
@@ -632,9 +632,9 @@ vrf_create()
 	__vrf_td_id_assign $vrf_name
 	tb_id=$?
 
-	ip link add dev $vrf_name type vrf table $tb_id
-	ip -4 route add table $tb_id unreachable default metric 4278198272
-	ip -6 route add table $tb_id unreachable default metric 4278198272
+	verbose_fail ip link add dev $vrf_name type vrf table $tb_id
+	verbose_fail ip -4 route add table $tb_id unreachable default metric 4278198272
+	verbose_fail ip -6 route add table $tb_id unreachable default metric 4278198272
 }
 
 vrf_destroy()
@@ -661,7 +661,7 @@ __addr_add_del()
 	array=("${@}")
 
 	for addrstr in "${array[@]}"; do
-		ip address $add_del $addrstr dev $if_name
+		verbose_fail ip address $add_del $addrstr dev $if_name
 	done
 }
 
@@ -671,8 +671,8 @@ __simple_if_init()
 	local vrf_name=$1; shift
 	local addrs=("${@}")
 
-	ip link set dev $if_name master $vrf_name
-	ip link set dev $if_name up
+	verbose_fail ip link set dev $if_name master $vrf_name
+	verbose_fail ip link set dev $if_name up
 
 	__addr_add_del $if_name add "${addrs[@]}"
 }
@@ -699,7 +699,7 @@ simple_if_init()
 	array=("${@}")
 
 	vrf_create $vrf_name
-	ip link set dev $vrf_name up
+	verbose_fail ip link set dev $vrf_name up
 	__simple_if_init $if_name $vrf_name "${array[@]}"
 }
 
@@ -1969,8 +1969,9 @@ payload_template_nbytes()
 		sed 's/:/\n/g' | wc -l
 }
 
-igmpv3_is_in_get()
+igmpv3_payload_get()
 {
+	local mode=$1; shift # 1=IS_IN 2=IS_EX
 	local GRP=$1; shift
 	local sources=("$@")
 
@@ -1984,7 +1985,7 @@ igmpv3_is_in_get()
 		)"CHECKSUM:"$(			: Checksum
 		)"00:00:"$(			: Reserved
 		)"00:01:"$(			: Number of Group Records
-		)"01:"$(			: Record Type - IS_IN
+		)"0$mode:"$(			: Record Type - filter mode
 		)"00:"$(			: Aux Data Len
 		)"${nsources}:"$(		: Number of Sources
 		)"$(ipv4_to_bytes $GRP):"$(	: Multicast Address
@@ -1996,6 +1997,22 @@ igmpv3_is_in_get()
 	local checksum=$(payload_template_calc_checksum "$igmpv3")
 
 	payload_template_expand_checksum "$igmpv3" $checksum
+}
+
+igmpv3_is_in_get()
+{
+	local GRP=$1; shift
+	local sources=("$@")
+
+	igmpv3_payload_get 1 "$GRP" "${sources[@]}"
+}
+
+igmpv3_is_ex_get()
+{
+	local GRP=$1; shift
+	local sources=("$@")
+
+	igmpv3_payload_get 2 "$GRP" "${sources[@]}"
 }
 
 igmpv2_leave_get()
@@ -2090,6 +2107,17 @@ mldv1_done_get()
 	local checksum=$(payload_template_calc_checksum ${sudohdr}${icmpv6})
 
 	payload_template_expand_checksum "$hbh$icmpv6" $checksum
+}
+
+mcast_mac_for_grp4()
+{
+	local grp=$1; shift
+
+	local a b c d
+	read a b c d <<< $(echo "$grp" | tr . ' ')
+	b=$((b % 128))
+
+	printf "01:00:5e:%02x:%02x:%02x" "$b" "$c" "$d"
 }
 
 bail_on_lldpad()

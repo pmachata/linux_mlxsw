@@ -500,8 +500,7 @@ xfail_on_veth()
 	local dev=$1; shift
 	local kind
 
-	kind=$(ip -j -d link show dev $dev |
-			jq -r '.[].linkinfo.info_kind')
+	kind=$(dev_kind "$dev")
 	if [[ $kind = veth ]]; then
 		FAIL_TO_XFAIL=yes "$@"
 	else
@@ -543,11 +542,25 @@ require_command()
 	fi
 }
 
+verbose_fail()
+{
+	local errout
+	local rc
+
+	errout=$("$@" 2>/dev/stdout)
+	rc=$?
+	if ((rc)); then
+		echo "Error running \`$@'."
+		echo "(rc=$rc) $errout"
+	fi
+	return "$rc"
+}
+
 adf_ip_link_add()
 {
 	local name=$1; shift
 
-	ip link add name "$name" "$@" && \
+	verbose_fail ip link add name "$name" "$@" && \
 		defer ip link del dev "$name"
 }
 
@@ -556,7 +569,7 @@ adf_ip_link_set_master()
 	local member=$1; shift
 	local master=$1; shift
 
-	ip link set dev "$member" master "$master" && \
+	verbose_fail ip link set dev "$member" master "$master" && \
 		defer ip link set dev "$member" nomaster
 }
 
@@ -566,7 +579,7 @@ adf_ip_link_set_addr()
 	local addr=$1; shift
 
 	local old_addr=$(mac_get "$name")
-	ip link set dev "$name" address "$addr" && \
+	verbose_fail ip link set dev "$name" address "$addr" && \
 		defer ip link set dev "$name" address "$old_addr"
 }
 
@@ -590,7 +603,7 @@ adf_ip_link_set_up()
 	local name=$1; shift
 
 	if ! ip_link_is_up "$name"; then
-		ip link set dev "$name" up && \
+		verbose_fail ip link set dev "$name" up && \
 			defer ip link set dev "$name" down
 	fi
 }
@@ -600,28 +613,53 @@ adf_ip_link_set_down()
 	local name=$1; shift
 
 	if ip_link_is_up "$name"; then
-		ip link set dev "$name" down && \
+		verbose_fail ip link set dev "$name" down && \
 			defer ip link set dev "$name" up
 	fi
+}
+
+ip_link_get_link()
+{
+	local dev=$1; shift
+
+	ip -j -d link show dev "$dev" |
+		jq -r '.[].link'
 }
 
 adf_ip_addr_add()
 {
 	local name=$1; shift
 
-	ip addr add dev "$name" "$@" && \
+	verbose_fail ip addr add dev "$name" "$@" && \
 		defer ip addr del dev "$name" "$@"
+}
+
+ip_addr_get()
+{
+	local dev=$1; shift
+	local family=$1; shift
+
+	ip -j address show dev "$dev" |
+		jq -r --arg family "$family" \
+		   '[.[].addr_info[] | select(.family == $family) | .local][-1]'
+}
+
+ip_addr_get4()
+{
+	local dev=$1; shift
+
+	ip_addr_get "$dev" inet
 }
 
 adf_ip_route_add()
 {
-	ip route add "$@" && \
+	verbose_fail ip route add "$@" && \
 		defer ip route del "$@"
 }
 
 adf_bridge_vlan_add()
 {
-	bridge vlan add "$@" && \
+	verbose_fail bridge vlan add "$@" && \
 		defer bridge vlan del "$@"
 }
 
