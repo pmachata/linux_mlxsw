@@ -1069,13 +1069,12 @@ static void neigh_invalidate(struct neighbour *neigh)
 	neigh_dbg(2, "neigh %p is failed\n", neigh);
 	neigh->updated = jiffies;
 
-	/* It is very thin place. report_unreachable is very complicated
-	   routine. Particularly, it can hit the same neighbour entry!
-
-	   So that, we try to be accurate and avoid dead loop. --ANK
-	 */
 	while (neigh->nud_state == NUD_FAILED &&
 	       (skb = __skb_dequeue(&neigh->arp_queue)) != NULL) {
+		/* The neigh->ops->error_report / arp_error_report can call
+		 * __icmp_send() to generate ICMP_HOST_UNREACH. That can hit the
+		 * same neighbor and cause deadlock. Thus, unlock first.
+		 */
 		write_unlock(&neigh->lock);
 		neigh->ops->error_report(neigh, skb);
 		write_lock(&neigh->lock);
