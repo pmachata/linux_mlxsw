@@ -915,6 +915,17 @@ vlan_destroy()
 	ip link del dev $name
 }
 
+adf_vlan_create()
+{
+	local if_name=$1; shift
+	local vid=$1; shift
+	local vrf=$1; shift
+	local ips=("${@}")
+
+	vlan_create "$if_name" "$vid" "$vrf" "${ips[@]}"
+	defer vlan_destroy "$if_name" "$vid"
+}
+
 team_create()
 {
 	local if_name=$1; shift
@@ -1164,6 +1175,15 @@ sysctl_restore()
 	local key=$1; shift
 
 	sysctl -qw $key="${SYSCTL_ORIG[$key]}"
+}
+
+adf_sysctl_set()
+{
+	local key=$1; shift
+	local value=$1; shift
+
+	sysctl_set "$key" "$value"
+	defer sysctl_restore "$key"
 }
 
 forwarding_enable()
