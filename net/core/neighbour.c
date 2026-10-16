@@ -14,6 +14,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/slab.h>
+#include <linux/delay.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -380,6 +381,7 @@ static void pneigh_queue_purge(struct sk_buff_head *list, struct net *net,
 
 static void neigh_flush_one(struct neighbour *n)
 {
+	printk(KERN_WARNING "flush\n");
 	hlist_del_rcu(&n->hash);
 	hlist_del_rcu(&n->dev_list);
 
@@ -389,6 +391,7 @@ static void neigh_flush_one(struct neighbour *n)
 	neigh_mark_dead(n);
 
 	if (refcount_read(&n->refcnt) != 1) {
+		printk(KERN_WARNING "race\n");
 		/* The most unpleasant situation.
 		 * We must destroy neighbour entry,
 		 * but someone still uses it.
@@ -1074,6 +1077,12 @@ static void neigh_invalidate(struct neighbour *neigh)
 	while (neigh->nud_state == NUD_FAILED &&
 	       (skb = __skb_dequeue(&neigh->arp_queue)) != NULL) {
 		write_unlock(&neigh->lock);
+		/* REPRO: widen the race window, only for test devices */
+		if (!strncmp(neigh->dev->name, "dnt", 3)) {
+			printk(KERN_WARNING "mdelay\n");
+			mdelay(5000);
+			printk(KERN_WARNING "/mdelay\n");
+		}
 		neigh->ops->error_report(neigh, skb);
 		write_lock(&neigh->lock);
 	}
