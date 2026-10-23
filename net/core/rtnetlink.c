@@ -4998,7 +4998,8 @@ static int rtnl_fdb_del(struct sk_buff *skb, struct nlmsghdr *nlh,
 						       &notified, extack);
 		} else {
 			if (ops->ndo_fdb_del_bulk)
-				err = ops->ndo_fdb_del_bulk(nlh, dev, extack);
+				err = ops->ndo_fdb_del_bulk(nlh, dev, portid,
+							    extack);
 		}
 
 		if (err)
@@ -5022,7 +5023,8 @@ static int rtnl_fdb_del(struct sk_buff *skb, struct nlmsghdr *nlh,
 			/* in case err was cleared by NTF_MASTER call */
 			err = -EOPNOTSUPP;
 			if (ops->ndo_fdb_del_bulk)
-				err = ops->ndo_fdb_del_bulk(nlh, dev, extack);
+				err = ops->ndo_fdb_del_bulk(nlh, dev, portid,
+							    extack);
 		}
 
 		if (!err) {

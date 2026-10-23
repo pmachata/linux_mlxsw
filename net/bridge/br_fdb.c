@@ -796,7 +796,7 @@ static const struct nla_policy br_fdb_del_bulk_policy[NDA_MAX + 1] = {
 };
 
 int br_fdb_delete_bulk(struct nlmsghdr *nlh, struct net_device *dev,
-		       struct netlink_ext_ack *extack)
+		       u32 portid, struct netlink_ext_ack *extack)
 {
 	struct net_bridge_fdb_flush_desc desc = {};
 	struct ndmsg *ndm = nlmsg_data(nlh);
