@@ -1410,7 +1410,7 @@ out:
 
 static int vxlan_fdb_get(struct sk_buff *skb,
 			 struct nlattr *tb[],
-			 const struct ndo_fdb_parms *parms, u32 portid, u32 seq,
+			 const struct ndo_fdb_parms *parms, u32 seq,
 			 struct netlink_ext_ack *extack)
 {
 	struct vxlan_dev *vxlan = netdev_priv(parms->dev);
@@ -1435,7 +1435,7 @@ static int vxlan_fdb_get(struct sk_buff *skb,
 		goto errout;
 	}
 
-	err = vxlan_fdb_info(skb, vxlan, f, portid, seq,
+	err = vxlan_fdb_info(skb, vxlan, f, parms->portid, seq,
 			     RTM_NEWNEIGH, 0, first_remote_rcu(f));
 errout:
 	rcu_read_unlock();
