@@ -4057,13 +4057,14 @@ void mlxsw_sp_parsing_depth_dec(struct mlxsw_sp *mlxsw_sp)
 
 	mutex_lock(&mlxsw_sp->parsing.lock);
 
-	if (!refcount_dec_and_test(&mlxsw_sp->parsing.parsing_depth_ref))
+	if (refcount_dec_not_one(&mlxsw_sp->parsing.parsing_depth_ref))
 		goto out_unlock;
 
 	mlxsw_reg_mprs_pack(mprs_pl, MLXSW_SP_DEFAULT_PARSING_DEPTH,
 			    mlxsw_sp->parsing.vxlan_udp_dport);
 	mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(mprs), mprs_pl);
 	mlxsw_sp->parsing.parsing_depth = MLXSW_SP_DEFAULT_PARSING_DEPTH;
+	refcount_set(&mlxsw_sp->parsing.parsing_depth_ref, 0);
 
 out_unlock:
 	mutex_unlock(&mlxsw_sp->parsing.lock);
