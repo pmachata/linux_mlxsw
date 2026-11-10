@@ -715,6 +715,7 @@ struct mlxsw_sp *mlxsw_sp_lower_get(struct net_device *dev);
 struct mlxsw_sp_port *mlxsw_sp_port_dev_lower_find(struct net_device *dev);
 struct mlxsw_sp_port *mlxsw_sp_port_dev_lower_find_rcu(struct net_device *dev);
 int mlxsw_sp_parsing_depth_inc(struct mlxsw_sp *mlxsw_sp);
+int mlxsw_sp_parsing_depth_dec_try(struct mlxsw_sp *mlxsw_sp);
 void mlxsw_sp_parsing_depth_dec(struct mlxsw_sp *mlxsw_sp);
 int mlxsw_sp_parsing_vxlan_udp_dport_set(struct mlxsw_sp *mlxsw_sp,
 					 __be16 udp_dport);

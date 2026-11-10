@@ -4051,9 +4051,10 @@ out_unlock:
 	return err;
 }
 
-void mlxsw_sp_parsing_depth_dec(struct mlxsw_sp *mlxsw_sp)
+static int __mlxsw_sp_parsing_depth_dec(struct mlxsw_sp *mlxsw_sp, bool force)
 {
 	char mprs_pl[MLXSW_REG_MPRS_LEN];
+	int err = 0;
 
 	mutex_lock(&mlxsw_sp->parsing.lock);
 
@@ -4062,12 +4063,27 @@ void mlxsw_sp_parsing_depth_dec(struct mlxsw_sp *mlxsw_sp)
 
 	mlxsw_reg_mprs_pack(mprs_pl, MLXSW_SP_DEFAULT_PARSING_DEPTH,
 			    mlxsw_sp->parsing.vxlan_udp_dport);
-	mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(mprs), mprs_pl);
+	err = mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(mprs), mprs_pl);
+	if (err && !force)
+		goto out_unlock;
+
 	mlxsw_sp->parsing.parsing_depth = MLXSW_SP_DEFAULT_PARSING_DEPTH;
 	refcount_set(&mlxsw_sp->parsing.parsing_depth_ref, 0);
 
 out_unlock:
 	mutex_unlock(&mlxsw_sp->parsing.lock);
+	return err;
+}
+
+int mlxsw_sp_parsing_depth_dec_try(struct mlxsw_sp *mlxsw_sp)
+{
+	return __mlxsw_sp_parsing_depth_dec(mlxsw_sp, false);
+}
+
+void mlxsw_sp_parsing_depth_dec(struct mlxsw_sp *mlxsw_sp)
+{
+	if (__mlxsw_sp_parsing_depth_dec(mlxsw_sp, true))
+		dev_warn(mlxsw_sp->bus_info->dev, "Failed to decrease parsing depth\n");
 }
 
 int mlxsw_sp_parsing_vxlan_udp_dport_set(struct mlxsw_sp *mlxsw_sp,
