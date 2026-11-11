@@ -237,6 +237,7 @@ struct mlxsw_sp_ptp_ops {
 	int (*hwtstamp_set)(struct mlxsw_sp_port *mlxsw_sp_port,
 			    struct kernel_hwtstamp_config *config,
 			    struct netlink_ext_ack *extack);
+	void (*hwtstamp_clr)(struct mlxsw_sp_port *mlxsw_sp_port);
 	void (*shaper_work)(struct work_struct *work);
 	int (*get_ts_info)(struct mlxsw_sp *mlxsw_sp,
 			   struct kernel_ethtool_ts_info *info);

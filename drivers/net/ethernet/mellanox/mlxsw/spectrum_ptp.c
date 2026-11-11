@@ -1218,8 +1218,18 @@ static int mlxsw_sp1_ptp_mtpppc_disable(struct mlxsw_sp_port *mlxsw_sp_port)
 	return 0;
 }
 
+static int mlxsw_sp1_ptp_mtpppc_disable_teardown(struct mlxsw_sp *mlxsw_sp)
+{
+	int err;
+
+	err = mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp, 0, 0);
+	mlxsw_sp_parsing_depth_dec(mlxsw_sp);
+	return err;
+}
+
 static int mlxsw_sp1_ptp_mtpppc_update(struct mlxsw_sp_port *mlxsw_sp_port,
-				       u16 ing_types, u16 egr_types)
+				       u16 ing_types, u16 egr_types,
+				       bool teardown)
 {
 	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
 	struct mlxsw_sp_port *tmp;
@@ -1246,8 +1256,11 @@ static int mlxsw_sp1_ptp_mtpppc_update(struct mlxsw_sp_port *mlxsw_sp_port,
 		return mlxsw_sp1_ptp_mtpppc_enable(mlxsw_sp_port,
 						   ing_types, egr_types);
 
-	if (!(ing_types || egr_types) && (orig_ing_types || orig_egr_types))
+	if (!(ing_types || egr_types) && (orig_ing_types || orig_egr_types)) {
+		if (teardown)
+			return mlxsw_sp1_ptp_mtpppc_disable_teardown(mlxsw_sp);
 		return mlxsw_sp1_ptp_mtpppc_disable(mlxsw_sp_port);
+	}
 
 	return mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp,
 					ing_types, egr_types);
@@ -1331,7 +1344,8 @@ int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 
 	mutex_lock(&mlxsw_sp_port->ptp.shaper_lock);
 
-	err = mlxsw_sp1_ptp_mtpppc_update(mlxsw_sp_port, ing_types, egr_types);
+	err = mlxsw_sp1_ptp_mtpppc_update(mlxsw_sp_port, ing_types, egr_types,
+					  false);
 	if (err)
 		goto out_unlock;
 
@@ -1368,6 +1382,20 @@ int mlxsw_sp1_ptp_get_ts_info(struct mlxsw_sp *mlxsw_sp,
 			   BIT(HWTSTAMP_FILTER_ALL);
 
 	return 0;
+}
+
+void mlxsw_sp1_ptp_hwtstamp_clr(struct mlxsw_sp_port *mlxsw_sp_port)
+{
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
+
+	if (mlxsw_sp1_ptp_mtpppc_update(mlxsw_sp_port, 0, 0, true))
+		dev_warn(mlxsw_sp->bus_info->dev, "Failed to update timestamping configuration\n");
+
+	/* The port is still in mlxsw_sp->ports[]. Make sure that other ports do
+	 * not take its stale state into account.
+	 */
+	mlxsw_sp_port->ptp.ing_types = 0;
+	mlxsw_sp_port->ptp.egr_types = 0;
 }
 
 struct mlxsw_sp_ptp_port_stat {
@@ -1740,6 +1768,13 @@ err_configure_port:
 err_get_message_types:
 	mutex_unlock(&ptp_state->lock);
 	return err;
+}
+
+void mlxsw_sp2_ptp_hwtstamp_clr(struct mlxsw_sp_port *mlxsw_sp_port)
+{
+	struct kernel_hwtstamp_config config = {};
+
+	mlxsw_sp2_ptp_hwtstamp_set(mlxsw_sp_port, &config, NULL);
 }
 
 int mlxsw_sp2_ptp_get_ts_info(struct mlxsw_sp *mlxsw_sp,
