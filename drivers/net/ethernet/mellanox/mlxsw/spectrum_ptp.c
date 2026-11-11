@@ -1183,6 +1183,41 @@ mlxsw_sp1_ptp_get_message_types(const struct kernel_hwtstamp_config *config,
 	return 0;
 }
 
+static int mlxsw_sp1_ptp_mtpppc_enable(struct mlxsw_sp_port *mlxsw_sp_port,
+				       u16 ing_types, u16 egr_types)
+{
+	int err;
+
+	err = mlxsw_sp_parsing_depth_inc(mlxsw_sp_port->mlxsw_sp);
+	if (err) {
+		netdev_err(mlxsw_sp_port->dev, "Failed to increase parsing depth");
+		return err;
+	}
+
+	err = mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp,
+				       ing_types, egr_types);
+	if (err)
+		goto err_mtpppc_set;
+
+	return 0;
+
+err_mtpppc_set:
+	mlxsw_sp_parsing_depth_dec(mlxsw_sp_port->mlxsw_sp);
+	return err;
+}
+
+static int mlxsw_sp1_ptp_mtpppc_disable(struct mlxsw_sp_port *mlxsw_sp_port)
+{
+	int err;
+
+	err = mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp, 0, 0);
+	if (err)
+		return err;
+
+	mlxsw_sp_parsing_depth_dec(mlxsw_sp_port->mlxsw_sp);
+	return 0;
+}
+
 static int mlxsw_sp1_ptp_mtpppc_update(struct mlxsw_sp_port *mlxsw_sp_port,
 				       u16 ing_types, u16 egr_types)
 {
@@ -1190,8 +1225,6 @@ static int mlxsw_sp1_ptp_mtpppc_update(struct mlxsw_sp_port *mlxsw_sp_port,
 	struct mlxsw_sp_port *tmp;
 	u16 orig_ing_types = 0;
 	u16 orig_egr_types = 0;
-	bool depth_inc = false;
-	int err;
 	int i;
 
 	/* MTPPPC configures timestamping globally, not per port. Find the
@@ -1209,27 +1242,15 @@ static int mlxsw_sp1_ptp_mtpppc_update(struct mlxsw_sp_port *mlxsw_sp_port,
 		}
 	}
 
-	if ((ing_types || egr_types) && !(orig_ing_types || orig_egr_types)) {
-		err = mlxsw_sp_parsing_depth_inc(mlxsw_sp);
-		if (err) {
-			netdev_err(mlxsw_sp_port->dev, "Failed to increase parsing depth");
-			return err;
-		}
-		depth_inc = true;
-	}
-
-	err = mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp,
-				       ing_types, egr_types);
-	if (err) {
-		if (depth_inc)
-			mlxsw_sp_parsing_depth_dec(mlxsw_sp);
-		return err;
-	}
+	if ((ing_types || egr_types) && !(orig_ing_types || orig_egr_types))
+		return mlxsw_sp1_ptp_mtpppc_enable(mlxsw_sp_port,
+						   ing_types, egr_types);
 
 	if (!(ing_types || egr_types) && (orig_ing_types || orig_egr_types))
-		mlxsw_sp_parsing_depth_dec(mlxsw_sp);
+		return mlxsw_sp1_ptp_mtpppc_disable(mlxsw_sp_port);
 
-	return 0;
+	return mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp,
+					ing_types, egr_types);
 }
 
 static bool mlxsw_sp1_ptp_hwtstamp_enabled(struct mlxsw_sp_port *mlxsw_sp_port)
