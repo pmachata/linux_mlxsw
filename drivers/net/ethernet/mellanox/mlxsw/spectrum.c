@@ -1183,10 +1183,7 @@ static int mlxsw_sp_port_hwtstamp_get(struct net_device *dev,
 
 static inline void mlxsw_sp_port_ptp_clear(struct mlxsw_sp_port *mlxsw_sp_port)
 {
-	struct kernel_hwtstamp_config config = {};
-
-	mlxsw_sp_port->mlxsw_sp->ptp_ops->hwtstamp_set(mlxsw_sp_port, &config,
-						       NULL);
+	mlxsw_sp_port->mlxsw_sp->ptp_ops->hwtstamp_clr(mlxsw_sp_port);
 }
 
 static const struct net_device_ops mlxsw_sp_port_netdev_ops = {
@@ -2657,6 +2654,7 @@ static const struct mlxsw_sp_ptp_ops mlxsw_sp1_ptp_ops = {
 	.transmitted	= mlxsw_sp1_ptp_transmitted,
 	.hwtstamp_get	= mlxsw_sp1_ptp_hwtstamp_get,
 	.hwtstamp_set	= mlxsw_sp1_ptp_hwtstamp_set,
+	.hwtstamp_clr	= mlxsw_sp1_ptp_hwtstamp_clr,
 	.shaper_work	= mlxsw_sp1_ptp_shaper_work,
 #if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
 	.get_ts_info	= mlxsw_sp1_ptp_get_ts_info,
@@ -2675,6 +2673,7 @@ static const struct mlxsw_sp_ptp_ops mlxsw_sp2_ptp_ops = {
 	.transmitted	= mlxsw_sp2_ptp_transmitted,
 	.hwtstamp_get	= mlxsw_sp2_ptp_hwtstamp_get,
 	.hwtstamp_set	= mlxsw_sp2_ptp_hwtstamp_set,
+	.hwtstamp_clr	= mlxsw_sp2_ptp_hwtstamp_clr,
 	.shaper_work	= mlxsw_sp2_ptp_shaper_work,
 #if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
 	.get_ts_info	= mlxsw_sp2_ptp_get_ts_info,
@@ -2694,6 +2693,7 @@ static const struct mlxsw_sp_ptp_ops mlxsw_sp4_ptp_ops = {
 	.transmitted	= mlxsw_sp2_ptp_transmitted,
 	.hwtstamp_get	= mlxsw_sp2_ptp_hwtstamp_get,
 	.hwtstamp_set	= mlxsw_sp2_ptp_hwtstamp_set,
+	.hwtstamp_clr	= mlxsw_sp2_ptp_hwtstamp_clr,
 	.shaper_work	= mlxsw_sp2_ptp_shaper_work,
 #if IS_REACHABLE(CONFIG_PTP_1588_CLOCK)
 	.get_ts_info	= mlxsw_sp2_ptp_get_ts_info,
