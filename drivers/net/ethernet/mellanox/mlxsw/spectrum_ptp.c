@@ -1206,16 +1206,29 @@ err_mtpppc_set:
 	return err;
 }
 
-static int mlxsw_sp1_ptp_mtpppc_disable(struct mlxsw_sp_port *mlxsw_sp_port)
+static int mlxsw_sp1_ptp_mtpppc_disable(struct mlxsw_sp_port *mlxsw_sp_port,
+					u16 orig_ing_types, u16 orig_egr_types)
 {
-	int err;
+	int err, rollback_err;
 
 	err = mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp, 0, 0);
 	if (err)
 		return err;
 
-	mlxsw_sp_parsing_depth_dec(mlxsw_sp_port->mlxsw_sp);
+	err = mlxsw_sp_parsing_depth_dec_try(mlxsw_sp_port->mlxsw_sp);
+	if (err)
+		goto err_parsing_depth_dec;
+
 	return 0;
+
+err_parsing_depth_dec:
+	rollback_err = mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp,
+						orig_ing_types,
+						orig_egr_types);
+	if (rollback_err)
+		netdev_err(mlxsw_sp_port->dev, "Failed to roll back timestamping configuration\n");
+
+	return err;
 }
 
 static void mlxsw_sp1_ptp_mtpppc_disable_teardown(struct mlxsw_sp *mlxsw_sp)
@@ -1259,7 +1272,9 @@ static int mlxsw_sp1_ptp_mtpppc_update(struct mlxsw_sp_port *mlxsw_sp_port,
 			mlxsw_sp1_ptp_mtpppc_disable_teardown(mlxsw_sp);
 			return 0;
 		}
-		return mlxsw_sp1_ptp_mtpppc_disable(mlxsw_sp_port);
+		return mlxsw_sp1_ptp_mtpppc_disable(mlxsw_sp_port,
+						    orig_ing_types,
+						    orig_egr_types);
 	}
 
 	return mlxsw_sp1_ptp_mtpppc_set(mlxsw_sp_port->mlxsw_sp,
