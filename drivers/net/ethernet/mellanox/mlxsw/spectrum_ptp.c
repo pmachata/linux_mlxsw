@@ -1247,13 +1247,15 @@ mlxsw_sp1_ptp_port_shaper_set(struct mlxsw_sp_port *mlxsw_sp_port, bool enable)
 	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(qeec), qeec_pl);
 }
 
-static int mlxsw_sp1_ptp_port_shaper_check(struct mlxsw_sp_port *mlxsw_sp_port)
+static int
+mlxsw_sp1_ptp_port_shaper_check(struct mlxsw_sp_port *mlxsw_sp_port,
+				bool hwtstamp_enabled)
 {
 	bool ptps = false;
 	int err, i;
 	u32 speed;
 
-	if (!mlxsw_sp1_ptp_hwtstamp_enabled(mlxsw_sp_port))
+	if (!hwtstamp_enabled)
 		return mlxsw_sp1_ptp_port_shaper_set(mlxsw_sp_port, false);
 
 	err = mlxsw_sp_port_speed_get(mlxsw_sp_port, &speed);
@@ -1284,7 +1286,7 @@ void mlxsw_sp1_ptp_shaper_work(struct work_struct *work)
 	if (!mlxsw_sp1_ptp_hwtstamp_enabled(mlxsw_sp_port))
 		goto out_unlock;
 
-	err = mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port);
+	err = mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port, true);
 	if (err)
 		netdev_err(mlxsw_sp_port->dev, "Failed to set up PTP shaper\n");
 
@@ -1316,7 +1318,8 @@ int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 	mlxsw_sp_port->ptp.ing_types = ing_types;
 	mlxsw_sp_port->ptp.egr_types = egr_types;
 
-	err = mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port);
+	err = mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port,
+					      ing_types || egr_types);
 	if (err)
 		goto out_unlock;
 
