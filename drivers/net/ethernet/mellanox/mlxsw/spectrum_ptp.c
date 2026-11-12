@@ -1345,6 +1345,7 @@ int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 			       struct netlink_ext_ack *extack)
 {
 	enum hwtstamp_rx_filters rx_filter;
+	bool orig_enabled;
 	u16 ing_types;
 	u16 egr_types;
 	int err;
@@ -1356,24 +1357,32 @@ int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 
 	guard(mutex)(&mlxsw_sp_port->ptp.shaper_lock);
 
-	err = mlxsw_sp1_ptp_mtpppc_update(mlxsw_sp_port, ing_types, egr_types,
-					  false);
-	if (err)
-		return err;
-
-	mlxsw_sp_port->ptp.hwtstamp_config = *config;
-	mlxsw_sp_port->ptp.ing_types = ing_types;
-	mlxsw_sp_port->ptp.egr_types = egr_types;
+	orig_enabled = mlxsw_sp1_ptp_hwtstamp_enabled(mlxsw_sp_port);
 
 	err = mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port,
 					      ing_types || egr_types);
 	if (err)
 		return err;
 
+	err = mlxsw_sp1_ptp_mtpppc_update(mlxsw_sp_port, ing_types, egr_types,
+					  false);
+	if (err)
+		goto err_mtpppc_update;
+
+	mlxsw_sp_port->ptp.hwtstamp_config = *config;
+	mlxsw_sp_port->ptp.ing_types = ing_types;
+	mlxsw_sp_port->ptp.egr_types = egr_types;
+
 	/* Notify the caller what we are actually timestamping. */
 	config->rx_filter = rx_filter;
 
 	return 0;
+
+err_mtpppc_update:
+	/* The port state is still the old one, put the shaper back to match. */
+	if (mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port, orig_enabled))
+		netdev_warn(mlxsw_sp_port->dev, "Failed to roll back PTP shaper\n");
+	return err;
 }
 
 int mlxsw_sp1_ptp_get_ts_info(struct mlxsw_sp *mlxsw_sp,
