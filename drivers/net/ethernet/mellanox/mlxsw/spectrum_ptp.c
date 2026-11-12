@@ -1685,7 +1685,8 @@ static int mlxsw_sp2_ptp_configure_port(struct mlxsw_sp_port *mlxsw_sp_port,
 }
 
 static int mlxsw_sp2_ptp_deconfigure_port(struct mlxsw_sp_port *mlxsw_sp_port,
-					  struct kernel_hwtstamp_config new_config)
+					  struct kernel_hwtstamp_config new_config,
+					  bool teardown)
 {
 	struct mlxsw_sp2_ptp_state *ptp_state;
 	int err;
@@ -1696,6 +1697,10 @@ static int mlxsw_sp2_ptp_deconfigure_port(struct mlxsw_sp_port *mlxsw_sp_port,
 		return 0;
 
 	err = mlxsw_sp2_ptp_disable(mlxsw_sp_port->mlxsw_sp, new_config);
+	if (err && teardown) {
+		dev_warn(mlxsw_sp_port->mlxsw_sp->bus_info->dev, "Failed to disable timestamping\n");
+		return 0;
+	}
 	if (err)
 		goto err_ptp_disable;
 
@@ -1706,9 +1711,10 @@ err_ptp_disable:
 	return err;
 }
 
-int mlxsw_sp2_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
-			       struct kernel_hwtstamp_config *config,
-			       struct netlink_ext_ack *extack)
+static int __mlxsw_sp2_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
+					struct kernel_hwtstamp_config *config,
+					bool teardown,
+					struct netlink_ext_ack *extack)
 {
 	struct kernel_hwtstamp_config new_config;
 	struct mlxsw_sp2_ptp_state *ptp_state;
@@ -1738,7 +1744,8 @@ int mlxsw_sp2_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 		if (err)
 			goto err_configure_port;
 	} else if (!new_ing_types && !new_egr_types && ptp_enabled) {
-		err = mlxsw_sp2_ptp_deconfigure_port(mlxsw_sp_port, new_config);
+		err = mlxsw_sp2_ptp_deconfigure_port(mlxsw_sp_port, new_config,
+						     teardown);
 		if (err)
 			goto err_deconfigure_port;
 	}
@@ -1759,11 +1766,19 @@ err_get_message_types:
 	return err;
 }
 
+int mlxsw_sp2_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
+			       struct kernel_hwtstamp_config *config,
+			       struct netlink_ext_ack *extack)
+{
+	return __mlxsw_sp2_ptp_hwtstamp_set(mlxsw_sp_port, config, false,
+					    extack);
+}
+
 void mlxsw_sp2_ptp_hwtstamp_clr(struct mlxsw_sp_port *mlxsw_sp_port)
 {
 	struct kernel_hwtstamp_config config = {};
 
-	mlxsw_sp2_ptp_hwtstamp_set(mlxsw_sp_port, &config, NULL);
+	__mlxsw_sp2_ptp_hwtstamp_set(mlxsw_sp_port, &config, true, NULL);
 }
 
 int mlxsw_sp2_ptp_get_ts_info(struct mlxsw_sp *mlxsw_sp,
