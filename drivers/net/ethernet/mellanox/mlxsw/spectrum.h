@@ -352,6 +352,7 @@ struct mlxsw_sp_port {
 	struct mlxsw_sp_flow_block *eg_flow_block;
 	struct {
 		struct delayed_work shaper_dw;
+		struct mutex shaper_lock; /* Serializes shaper_dw vs. hwtstamp_set */
 		struct kernel_hwtstamp_config hwtstamp_config;
 		u16 ing_types;
 		u16 egr_types;

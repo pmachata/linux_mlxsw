@@ -1279,6 +1279,8 @@ void mlxsw_sp1_ptp_shaper_work(struct work_struct *work)
 	mlxsw_sp_port = container_of(dwork, struct mlxsw_sp_port,
 				     ptp.shaper_dw);
 
+	guard(mutex)(&mlxsw_sp_port->ptp.shaper_lock);
+
 	if (!mlxsw_sp1_ptp_hwtstamp_enabled(mlxsw_sp_port))
 		return;
 
@@ -1300,6 +1302,8 @@ int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 					      &rx_filter);
 	if (err)
 		return err;
+
+	guard(mutex)(&mlxsw_sp_port->ptp.shaper_lock);
 
 	err = mlxsw_sp1_ptp_mtpppc_update(mlxsw_sp_port, ing_types, egr_types);
 	if (err)
