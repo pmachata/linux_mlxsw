@@ -1669,7 +1669,7 @@ int mlxsw_sp2_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 			       struct kernel_hwtstamp_config *config,
 			       struct netlink_ext_ack *extack)
 {
-	struct kernel_hwtstamp_config new_config;
+	struct kernel_hwtstamp_config new_config = {};
 	struct mlxsw_sp2_ptp_state *ptp_state;
 	enum hwtstamp_rx_filters rx_filter;
 	u16 new_ing_types, new_egr_types;
