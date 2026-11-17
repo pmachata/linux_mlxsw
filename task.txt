@@ -1,0 +1,58 @@
+Claude task description:
+
+drivers/net/ethernet/mellanox/mlxsw/spectrum_ptp.c's
+mlxsw_sp1_ptp_mtpppc_update() has a problem in error handling. The call to
+mlxsw_sp1_ptp_mtpppc_set() at the end propagates the error, but neglects to roll
+issues back.
+
+Confounding the issue is the fact that mlxsw_sp_parsing_depth_dec() is a void
+function, even though it can fail.
+
+The function mlxsw_sp1_ptp_mtpppc_update() is doing two things under the hood:
+enablement and tear down. It picks the right one depending on what the previous
+and new settings are.
+
+Enablement is always the same: increase parsing depth if necessary, and set up
+MTPPPC. On failure to later, decrease the parsing depth again.
+
+Tear down differs based on whether the function is called for reconfiguration
+(IOCTL request to disable PTP HW timestamping settings) or shutdown (port split,
+devlink reload, driver unload). The reconfiguration can be bounced, so if we
+fail to decrease the parsing depth, it is OK to say, sorry my man, couldn't
+disable your timestamping.
+
+Shutdown is more involved.
+
+For port split, because a split can lead to destruction of more than one port,
+and we won't be rolling back failure in shutdown of one port by trying to
+recreate a previously-destroyed port.
+
+Similarly for devlink reload, we could technically return an error to abort the
+reload, but that would require reinstating all hitherto-destroyed resources.
+It's just not going to happen.
+
+For driver unload, we do not even have an option to bail out.
+
+However, devlink reload and driver unload are not interesting, because for
+reload, the driver then goes through full init, including initializing parsing
+depth, and re-probing the driver likewise going through full init.
+
+So the only iffy situation is with port split, where we can find half-way
+through that we can't for example decrease parsing depth, thus leaking a
+resource. But I am not sure if there is a way around that problem. We need to
+unwind a port, and we need to do two things to achieve unwinding the PTP part of
+the port: deconfigure MTPPPC, and possibly decrease parsing depth. If the latter
+doesn't work, I don't know that we can do anything besides issuing a warning.
+
+This all illustrates that there probably need to be either a parameter to the
+function mlxsw_sp1_ptp_mtpppc_update() indicating whether it is being invoked in
+a reconfigure-like or shutdown-like context, or if the code ends up being too
+nasty, maybe there should in fact outright be two functions, one for
+reconfiguration, one for shutdown. In the reconfiguration case, failures are
+rolled back and error is propagated. In the shutdown case, failures are
+swallowed.
+
+The task here is to find a good way to represent the above requirements in code.
+Propose an approach to fixing the issue outlined in the first paragraph, while
+taking into consideration the requirements implicit in the elaboration after
+that.

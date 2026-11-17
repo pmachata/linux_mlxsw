@@ -1,0 +1,20 @@
+More issues identified by LLMs
+
+- mlxsw_sp_port_remove() cancels the shaper work before the port is
+  hidden from the PUDE event handler, so a link up event arriving in
+  between can queue the work again and have it run against a freed port.
+  The fix likely involves ordering the removal of the port from
+  mlxsw_sp->ports[] against the event handler, which runs in an RCU read
+  side section.
+
+- Port teardown (which runs under the devlink instance lock, not under
+  RTNL) is not serialized against timestamping configuration of another
+  port. MTPPPC and the parsing depth reference count are global, so the
+  two can interleave in a way that leaves another port with timestamping
+  configured in software but not in hardware. This needs a lock that
+  covers the computation of the aggregate configuration, the hardware
+  update, and the removal of ports from mlxsw_sp->ports[].
+
+- The runtime reconfiguration of the multipath hash in the router can
+  decrease the parsing depth before it writes the hash configuration, and
+  its own rollback of that can fail as well.
