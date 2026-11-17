@@ -1,0 +1,52 @@
+mlxsw: Clean up error handling around PTP and parsing depth configuration
+
+This series started from an LLM-generated report that
+mlxsw_sp1_ptp_mtpppc_update() does not roll back its work when the final
+MTPPPC write fails. The enable side of that was fixed by
+commit 1dadb4afc18c ("mlxsw: spectrum_ptp: release parsing depth on MTPPPC
+write failure"), itself a product of an LLM report. Looking into the rest
+of the function turned up that its disable side has the same problem, and
+that fixing it properly needs a bit more than a local tweak. Subsequent
+reviews of the patches with the Sashiko LLM reviewer, using several
+different models, surfaced further issues in the same area, and the series
+grew to cover them.
+
+None of this was hit organically. The error paths in question need a
+register write to fail, which does not really happen in practice. The race
+and the missing initialization are real but narrow. Both were reproduced on
+HW, the race with an artificial delay injected into the window and the
+missing initialization with a kernel built with
+CONFIG_INIT_STACK_ALL_PATTERN, but neither has been observed organically.
+Hence no Fixes: tags, and this is meant for net-next instead of net.
+
+The core of the matter is that mlxsw_sp1_ptp_mtpppc_update() serves two
+kinds of callers with different needs. An ioctl that reconfigures
+timestamping comes from a user and can be bounced, so failures should be
+rolled back and reported. Port teardown (port split, devlink reload, driver
+unload) either cannot be called off in principle, or can be called off in
+theory, but is practically impossible. The patchset recognizes these
+different needs, and the main concern is adding a new callback for
+deconfiguring PTP in a port-teardown context.
+
+The patchset progresses as follows:
+
+- Patches #1 and #2 address preexisting issues in the PTP code.
+
+- Patches #3 to #6 make adjustments that prepare the codebase for the
+  following patches and themselves do not change behavior, with the
+  exception of #5, which introduces a warning.
+
+- Patches #7 and #8 add a dedicated teardown callback, so that the port
+  destruction path does not try to roll anything back: it releases what it
+  holds, warns about what it could not undo, and clears the port's
+  timestamping state so that other ports do not take it into account. This
+  also fixes a Spectrum-2 teardown path that could leave a reference
+  without an owner.
+
+- Patches #9 and #10 then make the reconfiguration path actually roll back
+  when parsing depth or shaper configuration fails, and fail the request.
+
+The series is not exhaustive. LLM reviews have identified more issues in
+the general area, but the line had to be drawn somewhere. Either the
+connection to the core story of the patchset was too tenuous, or the fix
+looked like it would need more code.
