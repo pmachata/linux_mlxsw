@@ -1290,7 +1290,7 @@ mlxsw_sp_fib_entry_decap_init(struct mlxsw_sp *mlxsw_sp,
 
 err_parsing_depth_inc:
 	mlxsw_sp_kvdl_free(mlxsw_sp, MLXSW_SP_KVDL_ENTRY_TYPE_ADJ, 1,
-			   fib_entry->decap.tunnel_index);
+			   tunnel_index);
 	return err;
 }
 
