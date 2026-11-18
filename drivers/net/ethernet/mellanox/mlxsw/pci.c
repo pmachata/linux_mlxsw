@@ -582,7 +582,7 @@ static int mlxsw_pci_rdq_init(struct mlxsw_pci *mlxsw_pci, char *mbox,
 	return 0;
 
 rollback:
-	for (i--; i >= 0; i--) {
+	for (; i >= 0; i--) {
 		elem_info = mlxsw_pci_queue_elem_info_get(q, i);
 		for (j--; j >= 0; j--)
 			mlxsw_pci_rdq_page_free(q, elem_info, j);
