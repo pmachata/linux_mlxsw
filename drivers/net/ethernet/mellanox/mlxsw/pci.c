@@ -1065,6 +1065,7 @@ static int mlxsw_pci_cq_init(struct mlxsw_pci *mlxsw_pci, char *mbox,
 
 err_page_pool_init:
 	mlxsw_pci_cq_napi_teardown(q);
+	mlxsw_cmd_hw2sw_cq(mlxsw_pci->core, q->num);
 	return err;
 }
 
