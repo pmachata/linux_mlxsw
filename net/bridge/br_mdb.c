@@ -1447,6 +1447,7 @@ int br_mdb_del(struct net_device *dev, struct nlattr *tb[], u32 portid,
 
 struct br_mdb_flush_desc {
 	u32 port_ifindex;
+	u32 portid;
 	u16 vid;
 	u8 rt_protocol;
 	u8 state;
@@ -1504,7 +1505,7 @@ static void br_mdb_flush_host(struct net_bridge *br,
 	if (desc->state_mask && (state & desc->state_mask) != desc->state)
 		return;
 
-	br_multicast_host_leave(mp, true, 0);
+	br_multicast_host_leave(mp, true, desc->portid);
 	if (!mp->ports && netif_running(br->dev))
 		mod_timer(&mp->timer, jiffies);
 }
@@ -1537,7 +1538,7 @@ static void br_mdb_flush_pgs(struct net_bridge *br,
 			continue;
 		}
 
-		br_multicast_del_pg(mp, p, pp, 0);
+		br_multicast_del_pg(mp, p, pp, desc->portid);
 		/* br_multicast_del_pg() can remove other groups from this list. */
 		pp = &mp->ports;
 	}
@@ -1564,11 +1565,11 @@ static void br_mdb_flush(struct net_bridge *br,
 	spin_unlock_bh(&br->multicast_lock);
 }
 
-int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[],
+int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[], u32 portid,
 		    struct netlink_ext_ack *extack)
 {
 	struct net_bridge *br = netdev_priv(dev);
-	struct br_mdb_flush_desc desc = {};
+	struct br_mdb_flush_desc desc = { .portid = portid };
 	int err;
 
 	err = br_mdb_flush_desc_init(&desc, tb, extack);

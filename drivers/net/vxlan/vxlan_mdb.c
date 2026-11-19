@@ -81,6 +81,7 @@ struct vxlan_mdb_flush_desc {
 	__be32 src_vni;
 	__be32 remote_vni;
 	__be16 remote_port;
+	u32 portid;
 	u8 rt_protocol;
 };
 
@@ -1440,7 +1441,7 @@ static void vxlan_mdb_remotes_flush(struct vxlan_dev *vxlan,
 		    desc->rt_protocol != remote->rt_protocol)
 			continue;
 
-		vxlan_mdb_remote_del(vxlan, mdb_entry, remote, 0);
+		vxlan_mdb_remote_del(vxlan, mdb_entry, remote, desc->portid);
 	}
 }
 
@@ -1466,11 +1467,11 @@ static void vxlan_mdb_flush(struct vxlan_dev *vxlan,
 	}
 }
 
-int vxlan_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[],
+int vxlan_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[], u32 portid,
 		       struct netlink_ext_ack *extack)
 {
 	struct vxlan_dev *vxlan = netdev_priv(dev);
-	struct vxlan_mdb_flush_desc desc = {};
+	struct vxlan_mdb_flush_desc desc = { .portid = portid };
 	int err;
 
 	ASSERT_RTNL();
