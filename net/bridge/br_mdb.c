@@ -1396,7 +1396,7 @@ static int __br_mdb_del(const struct br_mdb_config *cfg)
 		if (!p->key.port || p->key.port->dev->ifindex != entry->ifindex)
 			continue;
 
-		br_multicast_del_pg(mp, p, pp);
+		br_multicast_del_pg(mp, p, pp, 0);
 		err = 0;
 		break;
 	}
@@ -1532,7 +1532,7 @@ static void br_mdb_flush_pgs(struct net_bridge *br,
 			continue;
 		}
 
-		br_multicast_del_pg(mp, p, pp);
+		br_multicast_del_pg(mp, p, pp, 0);
 		/* br_multicast_del_pg() can remove other groups from this list. */
 		pp = &mp->ports;
 	}

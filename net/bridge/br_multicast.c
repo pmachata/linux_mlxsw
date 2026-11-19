@@ -84,7 +84,7 @@ static void br_multicast_find_del_pg(struct net_bridge *br,
 static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 				  struct net_bridge_port_group *pg,
 				  struct net_bridge_port_group __rcu **pp,
-				  bool sg_del_exclude_ports);
+				  bool sg_del_exclude_ports, u32 portid);
 static void __br_multicast_stop(struct net_bridge_mcast *brmctx);
 
 static int br_mc_disabled_update(struct net_device *dev, bool value,
@@ -462,7 +462,7 @@ static void br_multicast_sg_del_exclude_ports(struct net_bridge_mdb_entry *sgmp)
 	for (pp = &sgmp->ports;
 	     (p = mlock_dereference(*pp, sgmp->br)) != NULL;) {
 		if (!(p->flags & MDB_PG_FLAGS_PERMANENT))
-			__br_multicast_del_pg(sgmp, p, pp, false);
+			__br_multicast_del_pg(sgmp, p, pp, false, 0);
 		else
 			pp = &p->next;
 	}
@@ -584,7 +584,7 @@ static void br_multicast_fwd_src_remove(struct net_bridge_group_src *src,
 
 		if (fastleave)
 			p->flags |= MDB_PG_FLAGS_FAST_LEAVE;
-		br_multicast_del_pg(mp, p, pp);
+		br_multicast_del_pg(mp, p, pp, 0);
 		break;
 	}
 	src->flags &= ~BR_SGRP_F_INSTALLED;
@@ -814,7 +814,7 @@ static void br_multicast_destroy_port_group(struct net_bridge_mcast_gc *gc)
 static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 				  struct net_bridge_port_group *pg,
 				  struct net_bridge_port_group __rcu **pp,
-				  bool sg_del_exclude_ports)
+				  bool sg_del_exclude_ports, u32 portid)
 {
 	struct net_bridge *br = pg->key.port->br;
 	struct net_bridge_group_src *ent;
@@ -829,7 +829,7 @@ static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 	br_multicast_eht_clean_sets(pg);
 	hlist_for_each_entry_safe(ent, tmp, &pg->src_list, node)
 		br_multicast_del_group_src(ent, false);
-	br_mdb_notify(br->dev, mp, pg, RTM_DELMDB, 0);
+	br_mdb_notify(br->dev, mp, pg, RTM_DELMDB, portid);
 	if (!br_multicast_is_star_g(&mp->addr)) {
 		rhashtable_remove_fast(&br->sg_port_tbl, &pg->rhnode,
 				       br_sg_port_rht_params);
@@ -848,9 +848,9 @@ static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 
 void br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 			 struct net_bridge_port_group *pg,
-			 struct net_bridge_port_group __rcu **pp)
+			 struct net_bridge_port_group __rcu **pp, u32 portid)
 {
-	__br_multicast_del_pg(mp, pg, pp, true);
+	__br_multicast_del_pg(mp, pg, pp, true, portid);
 }
 
 static void br_multicast_find_del_pg(struct net_bridge *br,
@@ -877,7 +877,7 @@ static void br_multicast_find_del_pg(struct net_bridge *br,
 		if (p != pg)
 			continue;
 
-		br_multicast_del_pg(mp, pg, pp);
+		br_multicast_del_pg(mp, pg, pp, 0);
 		return;
 	}
 
@@ -3781,7 +3781,7 @@ br_multicast_leave_group(struct net_bridge_mcast *brmctx,
 				break;
 
 			p->flags |= MDB_PG_FLAGS_FAST_LEAVE;
-			br_multicast_del_pg(mp, p, pp);
+			br_multicast_del_pg(mp, p, pp, 0);
 			break;
 		}
 		goto out;

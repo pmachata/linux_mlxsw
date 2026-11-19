@@ -1162,7 +1162,7 @@ void br_rtr_notify(struct net_device *dev, struct net_bridge_mcast_port *pmctx,
 		   int type);
 void br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 			 struct net_bridge_port_group *pg,
-			 struct net_bridge_port_group __rcu **pp);
+			 struct net_bridge_port_group __rcu **pp, u32 portid);
 void br_multicast_count(struct net_bridge *br,
 			const struct net_bridge_port *p,
 			const struct sk_buff *skb, u8 type, u8 dir);
