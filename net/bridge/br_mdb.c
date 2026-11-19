@@ -804,7 +804,7 @@ static int br_mdb_add_group_sg(const struct br_mdb_config *cfg,
 		memset(&star_group.src, 0, sizeof(star_group.src));
 		star_mp = br_mdb_ip_get(cfg->br, &star_group);
 		if (star_mp)
-			br_multicast_sg_add_exclude_ports(star_mp, p);
+			br_multicast_sg_add_exclude_ports(star_mp, p, 0);
 	}
 
 	return 0;
