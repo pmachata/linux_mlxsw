@@ -900,7 +900,7 @@ static void br_mdb_del_group_src(struct net_bridge_port_group *pg,
 	ent = br_multicast_find_group_src(pg, &src->addr);
 	if (WARN_ON_ONCE(!ent))
 		return;
-	br_multicast_del_group_src(ent, false);
+	br_multicast_del_group_src(ent, false, 0);
 }
 
 static int br_mdb_add_group_srcs(const struct br_mdb_config *cfg,
@@ -943,7 +943,7 @@ static int br_mdb_replace_group_srcs(const struct br_mdb_config *cfg,
 
 	hlist_for_each_entry_safe(ent, tmp, &pg->src_list, node) {
 		if (ent->flags & BR_SGRP_F_DELETE)
-			br_multicast_del_group_src(ent, false);
+			br_multicast_del_group_src(ent, false, 0);
 	}
 
 	return 0;
@@ -981,7 +981,7 @@ static int br_mdb_replace_group_star_g(const struct br_mdb_config *cfg,
 	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB, 0);
 
 	if (br_multicast_should_handle_mode(brmctx, cfg->group.proto))
-		br_multicast_star_g_handle_mode(pg, cfg->filter_mode);
+		br_multicast_star_g_handle_mode(pg, cfg->filter_mode, 0);
 
 	return 0;
 }
@@ -1033,7 +1033,7 @@ static int br_mdb_add_group_star_g(const struct br_mdb_config *cfg,
 	 */
 	if (br_multicast_should_handle_mode(brmctx, cfg->group.proto) &&
 	    cfg->filter_mode == MCAST_EXCLUDE)
-		br_multicast_star_g_handle_mode(p, MCAST_EXCLUDE);
+		br_multicast_star_g_handle_mode(p, MCAST_EXCLUDE, 0);
 
 	return 0;
 

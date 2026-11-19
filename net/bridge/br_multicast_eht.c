@@ -549,7 +549,7 @@ static bool __eht_del_set_entries(struct net_bridge_port_group *pg,
 		src_ent = br_multicast_find_group_src(pg, &src_ip);
 		if (!src_ent)
 			continue;
-		br_multicast_del_group_src(src_ent, true);
+		br_multicast_del_group_src(src_ent, true, 0);
 		changed = true;
 	}
 
@@ -634,7 +634,7 @@ static bool __eht_inc_exc(const struct net_bridge_mcast *brmctx,
 			br_multicast_ip_src_to_eht_addr(&src_ent->addr,
 							&eht_src_addr);
 			if (!br_multicast_eht_set_lookup(pg, &eht_src_addr)) {
-				br_multicast_del_group_src(src_ent, true);
+				br_multicast_del_group_src(src_ent, true, 0);
 				changed = true;
 				continue;
 			}
