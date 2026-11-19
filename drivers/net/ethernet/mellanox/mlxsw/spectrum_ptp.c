@@ -1279,12 +1279,17 @@ void mlxsw_sp1_ptp_shaper_work(struct work_struct *work)
 	mlxsw_sp_port = container_of(dwork, struct mlxsw_sp_port,
 				     ptp.shaper_dw);
 
+	mutex_lock(&mlxsw_sp_port->ptp.shaper_lock);
+
 	if (!mlxsw_sp1_ptp_hwtstamp_enabled(mlxsw_sp_port))
-		return;
+		goto out_unlock;
 
 	err = mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port);
 	if (err)
 		netdev_err(mlxsw_sp_port->dev, "Failed to set up PTP shaper\n");
+
+out_unlock:
+	mutex_unlock(&mlxsw_sp_port->ptp.shaper_lock);
 }
 
 int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
@@ -1301,9 +1306,11 @@ int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 	if (err)
 		return err;
 
+	mutex_lock(&mlxsw_sp_port->ptp.shaper_lock);
+
 	err = mlxsw_sp1_ptp_mtpppc_update(mlxsw_sp_port, ing_types, egr_types);
 	if (err)
-		return err;
+		goto out_unlock;
 
 	mlxsw_sp_port->ptp.hwtstamp_config = *config;
 	mlxsw_sp_port->ptp.ing_types = ing_types;
@@ -1311,12 +1318,14 @@ int mlxsw_sp1_ptp_hwtstamp_set(struct mlxsw_sp_port *mlxsw_sp_port,
 
 	err = mlxsw_sp1_ptp_port_shaper_check(mlxsw_sp_port);
 	if (err)
-		return err;
+		goto out_unlock;
 
 	/* Notify the caller what we are actually timestamping. */
 	config->rx_filter = rx_filter;
 
-	return 0;
+out_unlock:
+	mutex_unlock(&mlxsw_sp_port->ptp.shaper_lock);
+	return err;
 }
 
 int mlxsw_sp1_ptp_get_ts_info(struct mlxsw_sp *mlxsw_sp,

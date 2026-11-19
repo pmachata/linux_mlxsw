@@ -1683,6 +1683,7 @@ static int mlxsw_sp_port_create(struct mlxsw_sp *mlxsw_sp, u16 local_port,
 
 	INIT_DELAYED_WORK(&mlxsw_sp_port->ptp.shaper_dw,
 			  mlxsw_sp->ptp_ops->shaper_work);
+	mutex_init(&mlxsw_sp_port->ptp.shaper_lock);
 
 	mlxsw_sp->ports[local_port] = mlxsw_sp_port;
 
@@ -1705,6 +1706,7 @@ static int mlxsw_sp_port_create(struct mlxsw_sp *mlxsw_sp, u16 local_port,
 
 err_register_netdev:
 err_port_overheat_init_val_set:
+	mutex_destroy(&mlxsw_sp_port->ptp.shaper_lock);
 	mlxsw_sp_port_vlan_classification_set(mlxsw_sp_port, true, true);
 err_port_vlan_classification_set:
 	mlxsw_sp->ports[local_port] = NULL;
@@ -1757,6 +1759,7 @@ static void mlxsw_sp_port_remove(struct mlxsw_sp *mlxsw_sp, u16 local_port)
 	cancel_delayed_work_sync(&mlxsw_sp_port->ptp.shaper_dw);
 	unregister_netdev(mlxsw_sp_port->dev); /* This calls ndo_stop */
 	mlxsw_sp_port_ptp_clear(mlxsw_sp_port);
+	mutex_destroy(&mlxsw_sp_port->ptp.shaper_lock);
 	mlxsw_sp_port_vlan_classification_set(mlxsw_sp_port, true, true);
 	mlxsw_sp->ports[local_port] = NULL;
 	mlxsw_sp_port_vlan_flush(mlxsw_sp_port, true);
