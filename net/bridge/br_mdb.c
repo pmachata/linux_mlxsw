@@ -1382,7 +1382,7 @@ static int __br_mdb_del(const struct br_mdb_config *cfg)
 
 	/* host leave */
 	if (entry->ifindex == mp->br->dev->ifindex && mp->host_joined) {
-		br_multicast_host_leave(mp, false);
+		br_multicast_host_leave(mp, false, 0);
 		err = 0;
 		br_mdb_notify(br->dev, mp, NULL, RTM_DELMDB, 0);
 		if (!mp->ports && netif_running(br->dev))
@@ -1499,7 +1499,7 @@ static void br_mdb_flush_host(struct net_bridge *br,
 	if (desc->state_mask && (state & desc->state_mask) != desc->state)
 		return;
 
-	br_multicast_host_leave(mp, true);
+	br_multicast_host_leave(mp, true, 0);
 	if (!mp->ports && netif_running(br->dev))
 		mod_timer(&mp->timer, jiffies);
 }

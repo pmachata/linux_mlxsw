@@ -665,7 +665,7 @@ static void br_multicast_group_expired(struct timer_list *t)
 	    timer_pending(&mp->timer))
 		goto out;
 
-	br_multicast_host_leave(mp, true);
+	br_multicast_host_leave(mp, true, 0);
 
 	if (mp->ports)
 		goto out;
@@ -1512,7 +1512,8 @@ void br_multicast_host_join(const struct net_bridge_mcast *brmctx,
 	mod_timer(&mp->timer, jiffies + brmctx->multicast_membership_interval);
 }
 
-void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify)
+void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify,
+			     u32 portid)
 {
 	if (!mp->host_joined)
 		return;
@@ -1521,7 +1522,7 @@ void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify)
 	if (br_multicast_is_star_g(&mp->addr))
 		br_multicast_star_g_host_state(mp);
 	if (notify)
-		br_mdb_notify(mp->br->dev, mp, NULL, RTM_DELMDB, 0);
+		br_mdb_notify(mp->br->dev, mp, NULL, RTM_DELMDB, portid);
 }
 
 static struct net_bridge_port_group *
