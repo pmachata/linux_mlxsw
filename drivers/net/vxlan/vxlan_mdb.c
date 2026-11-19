@@ -69,6 +69,7 @@ struct vxlan_mdb_config {
 	u32 remote_ifindex;
 	__be32 remote_vni;
 	__be16 remote_port;
+	u32 portid;
 	u16 nlflags;
 	u8 flags;
 	u8 filter_mode;
@@ -819,6 +820,7 @@ vxlan_mdb_remote_src_fwd_add(const struct vxlan_mdb_config *cfg,
 	if (cfg->filter_mode == MCAST_EXCLUDE)
 		sg_cfg.flags = VXLAN_MDB_REMOTE_F_BLOCKED;
 	sg_cfg.rt_protocol = cfg->rt_protocol;
+	sg_cfg.portid = cfg->portid;
 
 	return __vxlan_mdb_add(&sg_cfg, extack);
 }
@@ -827,7 +829,7 @@ static void
 vxlan_mdb_remote_src_fwd_del(struct vxlan_dev *vxlan,
 			     const struct vxlan_mdb_entry_key *group,
 			     const struct vxlan_mdb_remote *remote,
-			     const union vxlan_addr *addr)
+			     const union vxlan_addr *addr, u32 portid)
 {
 	struct vxlan_rdst *rd = rtnl_dereference(remote->rd);
 	struct vxlan_mdb_config sg_cfg;
@@ -839,6 +841,7 @@ vxlan_mdb_remote_src_fwd_del(struct vxlan_dev *vxlan,
 	sg_cfg.group.vni = group->vni;
 	INIT_LIST_HEAD(&sg_cfg.src_list);
 	sg_cfg.remote_ip = rd->remote_ip;
+	sg_cfg.portid = portid;
 
 	__vxlan_mdb_del(&sg_cfg, NULL);
 }
@@ -883,9 +886,10 @@ err_src_del:
 static void vxlan_mdb_remote_src_del(struct vxlan_dev *vxlan,
 				     const struct vxlan_mdb_entry_key *group,
 				     const struct vxlan_mdb_remote *remote,
-				     struct vxlan_mdb_src_entry *ent)
+				     struct vxlan_mdb_src_entry *ent,
+				     u32 portid)
 {
-	vxlan_mdb_remote_src_fwd_del(vxlan, group, remote, &ent->addr);
+	vxlan_mdb_remote_src_fwd_del(vxlan, group, remote, &ent->addr, portid);
 	vxlan_mdb_remote_src_entry_del(ent);
 }
 
@@ -913,7 +917,7 @@ err_src_del:
 	hlist_for_each_entry_safe(ent, tmp, &remote->src_list, node) {
 		if (ent->flags & VXLAN_SGRP_F_NEW)
 			vxlan_mdb_remote_src_del(cfg->vxlan, &cfg->group, remote,
-						 ent);
+						 ent, cfg->portid);
 		else
 			ent->flags &= ~VXLAN_SGRP_F_DELETE;
 	}
@@ -922,13 +926,14 @@ err_src_del:
 
 static void vxlan_mdb_remote_srcs_del(struct vxlan_dev *vxlan,
 				      const struct vxlan_mdb_entry_key *group,
-				      struct vxlan_mdb_remote *remote)
+				      struct vxlan_mdb_remote *remote,
+				      u32 portid)
 {
 	struct vxlan_mdb_src_entry *ent;
 	struct hlist_node *tmp;
 
 	hlist_for_each_entry_safe(ent, tmp, &remote->src_list, node)
-		vxlan_mdb_remote_src_del(vxlan, group, remote, ent);
+		vxlan_mdb_remote_src_del(vxlan, group, remote, ent, portid);
 }
 
 static size_t
@@ -1015,13 +1020,13 @@ static int vxlan_mdb_nlmsg_fill(const struct vxlan_dev *vxlan,
 				struct sk_buff *skb,
 				const struct vxlan_mdb_entry *mdb_entry,
 				const struct vxlan_mdb_remote *remote,
-				int type)
+				int type, u32 portid)
 {
 	struct nlattr *mdb_nest, *mdb_entry_nest;
 	struct br_port_msg *bpm;
 	struct nlmsghdr *nlh;
 
-	nlh = nlmsg_put(skb, 0, 0, type, sizeof(*bpm), 0);
+	nlh = nlmsg_put(skb, portid, 0, type, sizeof(*bpm), 0);
 	if (!nlh)
 		return -EMSGSIZE;
 
@@ -1054,7 +1059,7 @@ cancel:
 static void vxlan_mdb_remote_notify(const struct vxlan_dev *vxlan,
 				    const struct vxlan_mdb_entry *mdb_entry,
 				    const struct vxlan_mdb_remote *remote,
-				    int type)
+				    int type, u32 portid)
 {
 	struct net *net = dev_net(vxlan->dev);
 	struct sk_buff *skb;
@@ -1065,7 +1070,8 @@ static void vxlan_mdb_remote_notify(const struct vxlan_dev *vxlan,
 	if (!skb)
 		goto errout;
 
-	err = vxlan_mdb_nlmsg_fill(vxlan, skb, mdb_entry, remote, type);
+	err = vxlan_mdb_nlmsg_fill(vxlan, skb, mdb_entry, remote, type,
+				   portid);
 	if (err) {
 		kfree_skb(skb);
 		goto errout;
@@ -1098,7 +1104,7 @@ vxlan_mdb_remote_srcs_replace(const struct vxlan_mdb_config *cfg,
 	hlist_for_each_entry_safe(ent, tmp, &remote->src_list, node) {
 		if (ent->flags & VXLAN_SGRP_F_DELETE)
 			vxlan_mdb_remote_src_del(vxlan, &mdb_entry->key, remote,
-						 ent);
+						 ent, cfg->portid);
 	}
 
 	return 0;
@@ -1125,7 +1131,8 @@ static int vxlan_mdb_remote_replace(const struct vxlan_mdb_config *cfg,
 	WRITE_ONCE(remote->flags, cfg->flags);
 	WRITE_ONCE(remote->filter_mode, cfg->filter_mode);
 	remote->rt_protocol = cfg->rt_protocol;
-	vxlan_mdb_remote_notify(vxlan, mdb_entry, remote, RTM_NEWMDB);
+	vxlan_mdb_remote_notify(vxlan, mdb_entry, remote, RTM_NEWMDB,
+				cfg->portid);
 
 	vxlan_mdb_remote_rdst_fini(old_rd);
 
@@ -1173,7 +1180,8 @@ static int vxlan_mdb_remote_add(const struct vxlan_mdb_config *cfg,
 		goto err_remote_fini;
 
 	list_add_rcu(&remote->list, &mdb_entry->remotes);
-	vxlan_mdb_remote_notify(cfg->vxlan, mdb_entry, remote, RTM_NEWMDB);
+	vxlan_mdb_remote_notify(cfg->vxlan, mdb_entry, remote, RTM_NEWMDB,
+				cfg->portid);
 
 	return 0;
 
@@ -1186,11 +1194,11 @@ err_free_remote:
 
 static void vxlan_mdb_remote_del(struct vxlan_dev *vxlan,
 				 struct vxlan_mdb_entry *mdb_entry,
-				 struct vxlan_mdb_remote *remote)
+				 struct vxlan_mdb_remote *remote, u32 portid)
 {
-	vxlan_mdb_remote_notify(vxlan, mdb_entry, remote, RTM_DELMDB);
+	vxlan_mdb_remote_notify(vxlan, mdb_entry, remote, RTM_DELMDB, portid);
 	list_del_rcu(&remote->list);
-	vxlan_mdb_remote_srcs_del(vxlan, &mdb_entry->key, remote);
+	vxlan_mdb_remote_srcs_del(vxlan, &mdb_entry->key, remote, portid);
 	vxlan_mdb_remote_fini(vxlan, remote);
 	kfree_rcu(remote, rcu);
 }
@@ -1289,7 +1297,7 @@ static int __vxlan_mdb_del(const struct vxlan_mdb_config *cfg,
 		return -ENOENT;
 	}
 
-	vxlan_mdb_remote_del(vxlan, mdb_entry, remote);
+	vxlan_mdb_remote_del(vxlan, mdb_entry, remote, cfg->portid);
 	vxlan_mdb_entry_put(vxlan, mdb_entry);
 
 	vxlan->mdb_seq++;
@@ -1431,7 +1439,7 @@ static void vxlan_mdb_remotes_flush(struct vxlan_dev *vxlan,
 		    desc->rt_protocol != remote->rt_protocol)
 			continue;
 
-		vxlan_mdb_remote_del(vxlan, mdb_entry, remote);
+		vxlan_mdb_remote_del(vxlan, mdb_entry, remote, 0);
 	}
 }
 
