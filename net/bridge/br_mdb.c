@@ -752,7 +752,7 @@ static int br_mdb_replace_group_sg(const struct br_mdb_config *cfg,
 	else
 		timer_delete(&pg->timer);
 
-	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB, 0);
+	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB, cfg->portid);
 
 	return 0;
 }
@@ -791,7 +791,7 @@ static int br_mdb_add_group_sg(const struct br_mdb_config *cfg,
 	if (!(flags & MDB_PG_FLAGS_PERMANENT) && !cfg->src_entry)
 		mod_timer(&p->timer,
 			  now + brmctx->multicast_membership_interval);
-	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB, 0);
+	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB, cfg->portid);
 
 	/* All of (*, G) EXCLUDE ports need to be added to the new (S, G) for
 	 * proper replication.
@@ -804,7 +804,8 @@ static int br_mdb_add_group_sg(const struct br_mdb_config *cfg,
 		memset(&star_group.src, 0, sizeof(star_group.src));
 		star_mp = br_mdb_ip_get(cfg->br, &star_group);
 		if (star_mp)
-			br_multicast_sg_add_exclude_ports(star_mp, p, 0);
+			br_multicast_sg_add_exclude_ports(star_mp, p,
+							  cfg->portid);
 	}
 
 	return 0;
@@ -843,6 +844,7 @@ static int br_mdb_add_group_src_fwd(const struct br_mdb_config *cfg,
 	sg_cfg.filter_mode = MCAST_INCLUDE;
 	sg_cfg.rt_protocol = cfg->rt_protocol;
 	sg_cfg.nlflags = cfg->nlflags;
+	sg_cfg.portid = cfg->portid;
 	err = br_mdb_add_group_sg(&sg_cfg, sgmp, brmctx, flags, extack);
 	if (err)
 		br_multicast_del_group(sgmp);
@@ -893,14 +895,14 @@ err_del_sg:
 }
 
 static void br_mdb_del_group_src(struct net_bridge_port_group *pg,
-				 struct br_mdb_src_entry *src)
+				 struct br_mdb_src_entry *src, u32 portid)
 {
 	struct net_bridge_group_src *ent;
 
 	ent = br_multicast_find_group_src(pg, &src->addr);
 	if (WARN_ON_ONCE(!ent))
 		return;
-	br_multicast_del_group_src(ent, false, 0);
+	br_multicast_del_group_src(ent, false, portid);
 }
 
 static int br_mdb_add_group_srcs(const struct br_mdb_config *cfg,
@@ -921,7 +923,7 @@ static int br_mdb_add_group_srcs(const struct br_mdb_config *cfg,
 
 err_del_group_srcs:
 	for (i--; i >= 0; i--)
-		br_mdb_del_group_src(pg, &cfg->src_entries[i]);
+		br_mdb_del_group_src(pg, &cfg->src_entries[i], cfg->portid);
 	return err;
 }
 
@@ -943,7 +945,7 @@ static int br_mdb_replace_group_srcs(const struct br_mdb_config *cfg,
 
 	hlist_for_each_entry_safe(ent, tmp, &pg->src_list, node) {
 		if (ent->flags & BR_SGRP_F_DELETE)
-			br_multicast_del_group_src(ent, false, 0);
+			br_multicast_del_group_src(ent, false, cfg->portid);
 	}
 
 	return 0;
@@ -978,10 +980,11 @@ static int br_mdb_replace_group_star_g(const struct br_mdb_config *cfg,
 	else
 		timer_delete(&pg->timer);
 
-	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB, 0);
+	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB, cfg->portid);
 
 	if (br_multicast_should_handle_mode(brmctx, cfg->group.proto))
-		br_multicast_star_g_handle_mode(pg, cfg->filter_mode, 0);
+		br_multicast_star_g_handle_mode(pg, cfg->filter_mode,
+						cfg->portid);
 
 	return 0;
 }
@@ -1027,13 +1030,14 @@ static int br_mdb_add_group_star_g(const struct br_mdb_config *cfg,
 	    cfg->filter_mode == MCAST_EXCLUDE)
 		mod_timer(&p->timer,
 			  now + brmctx->multicast_membership_interval);
-	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB, 0);
+	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB, cfg->portid);
 	/* If we are adding a new EXCLUDE port group (*, G), it needs to be
 	 * also added to all (S, G) entries for proper replication.
 	 */
 	if (br_multicast_should_handle_mode(brmctx, cfg->group.proto) &&
 	    cfg->filter_mode == MCAST_EXCLUDE)
-		br_multicast_star_g_handle_mode(p, MCAST_EXCLUDE, 0);
+		br_multicast_star_g_handle_mode(p, MCAST_EXCLUDE,
+						cfg->portid);
 
 	return 0;
 
@@ -1070,7 +1074,7 @@ static int br_mdb_add_group(const struct br_mdb_config *cfg,
 		}
 
 		br_multicast_host_join(brmctx, mp, false);
-		br_mdb_notify(br->dev, mp, NULL, RTM_NEWMDB, 0);
+		br_mdb_notify(br->dev, mp, NULL, RTM_NEWMDB, cfg->portid);
 
 		return 0;
 	}
@@ -1239,7 +1243,7 @@ static int br_mdb_config_attrs_init(struct nlattr *set_attrs,
 }
 
 static int br_mdb_config_init(struct br_mdb_config *cfg, struct net_device *dev,
-			      struct nlattr *tb[], u16 nlmsg_flags,
+			      struct nlattr *tb[], u32 portid, u16 nlmsg_flags,
 			      struct netlink_ext_ack *extack)
 {
 	struct net *net = dev_net(dev);
@@ -1248,6 +1252,7 @@ static int br_mdb_config_init(struct br_mdb_config *cfg, struct net_device *dev,
 	cfg->filter_mode = MCAST_EXCLUDE;
 	cfg->rt_protocol = RTPROT_STATIC;
 	cfg->nlflags = nlmsg_flags;
+	cfg->portid = portid;
 
 	cfg->br = netdev_priv(dev);
 
@@ -1304,15 +1309,15 @@ static void br_mdb_config_fini(struct br_mdb_config *cfg)
 	br_mdb_config_src_list_fini(cfg);
 }
 
-int br_mdb_add(struct net_device *dev, struct nlattr *tb[], u16 nlmsg_flags,
-	       struct netlink_ext_ack *extack)
+int br_mdb_add(struct net_device *dev, struct nlattr *tb[], u32 portid,
+	       u16 nlmsg_flags, struct netlink_ext_ack *extack)
 {
 	struct net_bridge_vlan_group *vg;
 	struct net_bridge_vlan *v;
 	struct br_mdb_config cfg;
 	int err;
 
-	err = br_mdb_config_init(&cfg, dev, tb, nlmsg_flags, extack);
+	err = br_mdb_config_init(&cfg, dev, tb, portid, nlmsg_flags, extack);
 	if (err)
 		return err;
 
@@ -1384,7 +1389,7 @@ static int __br_mdb_del(const struct br_mdb_config *cfg)
 	if (entry->ifindex == mp->br->dev->ifindex && mp->host_joined) {
 		br_multicast_host_leave(mp, false, 0);
 		err = 0;
-		br_mdb_notify(br->dev, mp, NULL, RTM_DELMDB, 0);
+		br_mdb_notify(br->dev, mp, NULL, RTM_DELMDB, cfg->portid);
 		if (!mp->ports && netif_running(br->dev))
 			mod_timer(&mp->timer, jiffies);
 		goto unlock;
@@ -1396,7 +1401,7 @@ static int __br_mdb_del(const struct br_mdb_config *cfg)
 		if (!p->key.port || p->key.port->dev->ifindex != entry->ifindex)
 			continue;
 
-		br_multicast_del_pg(mp, p, pp, 0);
+		br_multicast_del_pg(mp, p, pp, cfg->portid);
 		err = 0;
 		break;
 	}
@@ -1406,7 +1411,7 @@ unlock:
 	return err;
 }
 
-int br_mdb_del(struct net_device *dev, struct nlattr *tb[],
+int br_mdb_del(struct net_device *dev, struct nlattr *tb[], u32 portid,
 	       struct netlink_ext_ack *extack)
 {
 	struct net_bridge_vlan_group *vg;
@@ -1414,7 +1419,7 @@ int br_mdb_del(struct net_device *dev, struct nlattr *tb[],
 	struct br_mdb_config cfg;
 	int err;
 
-	err = br_mdb_config_init(&cfg, dev, tb, 0, extack);
+	err = br_mdb_config_init(&cfg, dev, tb, portid, 0, extack);
 	if (err)
 		return err;
 

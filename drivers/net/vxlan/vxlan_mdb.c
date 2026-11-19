@@ -610,7 +610,7 @@ err_src_list_fini:
 
 static int vxlan_mdb_config_init(struct vxlan_mdb_config *cfg,
 				 struct net_device *dev, struct nlattr *tb[],
-				 u16 nlmsg_flags,
+				 u32 portid, u16 nlmsg_flags,
 				 struct netlink_ext_ack *extack)
 {
 	struct br_mdb_entry *entry = nla_data(tb[MDBA_SET_ENTRY]);
@@ -624,6 +624,7 @@ static int vxlan_mdb_config_init(struct vxlan_mdb_config *cfg,
 	cfg->group.vni = vcfg->vni;
 	INIT_LIST_HEAD(&cfg->src_list);
 	cfg->nlflags = nlmsg_flags;
+	cfg->portid = portid;
 	cfg->filter_mode = MCAST_EXCLUDE;
 	cfg->rt_protocol = RTPROT_STATIC;
 	cfg->remote_vni = vcfg->vni;
@@ -1305,15 +1306,15 @@ static int __vxlan_mdb_del(const struct vxlan_mdb_config *cfg,
 	return 0;
 }
 
-int vxlan_mdb_add(struct net_device *dev, struct nlattr *tb[], u16 nlmsg_flags,
-		  struct netlink_ext_ack *extack)
+int vxlan_mdb_add(struct net_device *dev, struct nlattr *tb[], u32 portid,
+		  u16 nlmsg_flags, struct netlink_ext_ack *extack)
 {
 	struct vxlan_mdb_config cfg;
 	int err;
 
 	ASSERT_RTNL();
 
-	err = vxlan_mdb_config_init(&cfg, dev, tb, nlmsg_flags, extack);
+	err = vxlan_mdb_config_init(&cfg, dev, tb, portid, nlmsg_flags, extack);
 	if (err)
 		return err;
 
@@ -1323,7 +1324,7 @@ int vxlan_mdb_add(struct net_device *dev, struct nlattr *tb[], u16 nlmsg_flags,
 	return err;
 }
 
-int vxlan_mdb_del(struct net_device *dev, struct nlattr *tb[],
+int vxlan_mdb_del(struct net_device *dev, struct nlattr *tb[], u32 portid,
 		  struct netlink_ext_ack *extack)
 {
 	struct vxlan_mdb_config cfg;
@@ -1331,7 +1332,7 @@ int vxlan_mdb_del(struct net_device *dev, struct nlattr *tb[],
 
 	ASSERT_RTNL();
 
-	err = vxlan_mdb_config_init(&cfg, dev, tb, 0, extack);
+	err = vxlan_mdb_config_init(&cfg, dev, tb, portid, 0, extack);
 	if (err)
 		return err;
 
