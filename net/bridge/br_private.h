@@ -1155,7 +1155,7 @@ void br_multicast_del_port_group(struct net_bridge_port_group *p);
 int br_mdb_hash_init(struct net_bridge *br);
 void br_mdb_hash_fini(struct net_bridge *br);
 void br_mdb_notify(struct net_device *dev, struct net_bridge_mdb_entry *mp,
-		   struct net_bridge_port_group *pg, int type);
+		   struct net_bridge_port_group *pg, int type, u32 portid);
 void br_mdb_flag_change_notify(struct net_device *dev, struct net_bridge_mdb_entry *mp,
 			       struct net_bridge_port_group *pg);
 void br_rtr_notify(struct net_device *dev, struct net_bridge_mcast_port *pmctx,
