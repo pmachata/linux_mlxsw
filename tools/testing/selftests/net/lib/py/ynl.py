@@ -29,8 +29,8 @@ except ModuleNotFoundError as e:
 
 __all__ = [
     "NlError", "NlPolicy", "Netlink", "YnlFamily", "SPEC_PATH",
-    "EthtoolFamily", "RtnlFamily", "RtnlNeighFamily", "RtnlAddrFamily",
-    "RtnlRouteFamily",
+    "EthtoolFamily", "RtnlFamily", "RtnlMdbFamily", "RtnlNeighFamily",
+    "RtnlAddrFamily", "RtnlRouteFamily",
     "NetdevFamily", "NetshaperFamily", "NlctrlFamily", "DevlinkFamily",
     "GtpFamily", "PSPFamily",
 ]
@@ -48,6 +48,13 @@ class EthtoolFamily(YnlFamily):
 class RtnlFamily(YnlFamily):
     def __init__(self, recv_size=0):
         super().__init__((SPEC_PATH / Path('rt-link.yaml')).as_posix(),
+                         schema='', recv_size=recv_size)
+
+class RtnlMdbFamily(YnlFamily):
+    """Netlink interface for bridge multicast database messages."""
+    # pylint: disable=too-few-public-methods
+    def __init__(self, recv_size=0):
+        super().__init__((SPEC_PATH / Path('rt-mdb.yaml')).as_posix(),
                          schema='', recv_size=recv_size)
 
 class RtnlNeighFamily(YnlFamily):
