@@ -242,3 +242,21 @@ operations:
         request:
           value: 85
           attributes: *mdb-set-all
+    -
+      name: newmdb-ntf
+      doc: Notify a multicast database entry creation
+      value: 84
+      notify: getmdb
+      fixed-header: br-port-msg
+    -
+      name: delmdb-ntf
+      doc: Notify a multicast database entry deletion
+      value: 85
+      notify: getmdb
+      fixed-header: br-port-msg
+
+mcast-groups:
+  list:
+    -
+      name: rtnlgrp-mdb
+      value: 26
