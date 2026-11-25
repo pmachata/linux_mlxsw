@@ -125,28 +125,37 @@ def src_list(sources, mode=MCAST_INCLUDE):
             'src-list': {'entry': [{'address': s} for s in sources]}}
 
 
-def add_replace_del(env, br, port, group, *, count=1, attrs=None):
+def add_replace_del(env, br, port, group, *, count=1, attrs=None, extra=None,
+                    host=None, add_state=MDB_TEMPORARY):
     """Add an entry through socket A, replace it through B, delete it through
-    A. The replace step is skipped for host entries, which cannot be changed
-    other than by deleting them, and for entries that have sources."""
+    A. EXTRA are attributes to give with every request, and ATTRS are given
+    just with the add. The replace step is skipped for host entries, which
+    cannot be changed other than by deleting them, and for entries that have
+    sources. Bridge port entries are added as temporary and replaced as
+    permanent; VXLAN entries can only be permanent."""
+    # pylint: disable=too-many-arguments
     bridge_ifindex = env.ifindex(br)
     ifindex = env.ifindex(port)
-    host = port == br
+    if host is None:
+        host = port == br
+    extra = extra or {}
 
     env.a.do('newmdb',
-             mdb_req(bridge_ifindex, ifindex, group, MDB_TEMPORARY, attrs),
+             mdb_req(bridge_ifindex, ifindex, group, add_state,
+                     extra | (attrs or {})),
              flags=[Netlink.NLM_F_CREATE | Netlink.NLM_F_EXCL])
     env.check_ntfs(RTM_NEWMDB, group, env.a, count)
 
     if not host and not attrs:
         env.b.do('newmdb',
-                 mdb_req(bridge_ifindex, ifindex, group, MDB_PERMANENT),
+                 mdb_req(bridge_ifindex, ifindex, group, MDB_PERMANENT,
+                         extra),
                  flags=[Netlink.NLM_F_CREATE | Netlink.NLM_F_REPLACE])
         env.check_ntfs(RTM_NEWMDB, group, env.b, count)
 
     state = MDB_TEMPORARY if host else MDB_PERMANENT
     env.a.do('delmdb',
-             mdb_req(bridge_ifindex, ifindex, group, state),
+             mdb_req(bridge_ifindex, ifindex, group, state, extra),
              flags=[])
     env.check_ntfs(RTM_DELMDB, group, env.a, count)
 
@@ -224,16 +233,18 @@ def test_bridge_exclude() -> None:
         request(env.b, 'delmdb', d0, {'source': "192.0.2.1"}, [])
 
 
-def flush(env, br, port, groups):
+def flush(env, br, port, groups, *, extra=None, host=None):
     """Flush all entries of a port through socket A, and check that all the
     notifications carry the port ID. Host entries are always temporary."""
     bridge_ifindex = env.ifindex(br)
     ifindex = env.ifindex(port)
-    state = MDB_TEMPORARY if port == br else MDB_PERMANENT
+    if host is None:
+        host = port == br
+    state = MDB_TEMPORARY if host else MDB_PERMANENT
 
     for group in groups:
         env.a.do('newmdb',
-                 mdb_req(bridge_ifindex, ifindex, group, state),
+                 mdb_req(bridge_ifindex, ifindex, group, state, extra),
                  flags=[Netlink.NLM_F_CREATE | Netlink.NLM_F_EXCL])
 
     env.ntfs()
@@ -271,6 +282,48 @@ def test_bridge_flush_host() -> None:
         ip("link add br0 up type bridge vlan_default_pvid 0", ns=ns)
 
         flush(env, "br0", "br0", ["239.2.2.4", "239.2.2.5"])
+
+
+def vxlan_setup(ns):
+    """Create a VXLAN device that supports MDB. Return the attributes that
+    all requests for this device need to carry."""
+    ip("link add dd up type dummy", ns=ns)
+    ip("addr add dev dd 198.51.100.1/24", ns=ns)
+    ip("link add vx0 up type vxlan local 198.51.100.1 dstport 4789 "
+       "external vnifilter", ns=ns)
+    return {'dst': "198.51.100.2", 'src-vni': 10010}
+
+
+def test_vxlan() -> None:
+    """A VXLAN entry: add, replace, delete."""
+    with NetNS() as ns:
+        env = Env(ns)
+        extra = vxlan_setup(ns)
+
+        add_replace_del(env, "vx0", "vx0", "239.4.1.1", extra=extra,
+                        host=False, add_state=MDB_PERMANENT)
+
+
+def test_vxlan_sources() -> None:
+    """A VXLAN (*,G) entry with sources: the (S,G) entries that are created
+    and deleted along with it carry the port ID as well."""
+    with NetNS() as ns:
+        env = Env(ns)
+        extra = vxlan_setup(ns)
+
+        add_replace_del(env, "vx0", "vx0", "239.4.1.2", count=3, extra=extra,
+                        host=False, add_state=MDB_PERMANENT,
+                        attrs=src_list(["192.0.2.1", "192.0.2.2"]))
+
+
+def test_vxlan_flush() -> None:
+    """Bulk delete of VXLAN entries."""
+    with NetNS() as ns:
+        env = Env(ns)
+        extra = vxlan_setup(ns)
+
+        flush(env, "vx0", "vx0", ["239.4.2.1", "239.4.2.2", "239.4.2.3"],
+              extra=extra, host=False)
 
 
 def test_bridge_timer() -> None:
@@ -372,6 +425,9 @@ def main() -> None:
         test_bridge_flush_host,
         test_bridge_timer,
         test_bridge_snooping,
+        test_vxlan,
+        test_vxlan_sources,
+        test_vxlan_flush,
     ])
     ksft_exit()
 
