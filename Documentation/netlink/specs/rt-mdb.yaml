@@ -130,6 +130,79 @@ attribute-sets:
           could serve as a selector of a sub-message. Only the struct is
           decoded; the attributes that follow are ignored.
 
+  -
+    name: mdba-set-entry-attrs
+    name-prefix: mdba-
+    doc: Attributes of the MDB add and delete requests.
+    attributes:
+      -
+        name: set-entry
+        type: binary
+        struct: br-mdb-entry
+        value: 1
+      -
+        name: set-entry-attrs
+        type: nest
+        nested-attributes: mdbe-attrs
+  -
+    name: mdbe-attrs
+    name-prefix: mdbe-attr-
+    attributes:
+      -
+        name: source
+        type: binary
+        display-hint: ipv4-or-v6
+        value: 1
+      -
+        name: src-list
+        type: nest
+        nested-attributes: mdbe-src-list-attrs
+      -
+        name: group-mode
+        type: u8
+        enum: mcast-filter-mode
+      -
+        name: rtprot
+        type: u8
+      -
+        name: dst
+        type: binary
+        display-hint: ipv4-or-v6
+      -
+        name: dst-port
+        type: u16
+      -
+        name: vni
+        type: u32
+      -
+        name: ifindex
+        type: s32
+      -
+        name: src-vni
+        type: u32
+      -
+        name: state-mask
+        type: u8
+  -
+    name: mdbe-src-list-attrs
+    name-prefix: mdbe-src-list-
+    attributes:
+      -
+        name: entry
+        type: nest
+        nested-attributes: mdbe-srcattr-attrs
+        multi-attr: true
+        value: 1
+  -
+    name: mdbe-srcattr-attrs
+    name-prefix: mdbe-srcattr-
+    attributes:
+      -
+        name: address
+        type: binary
+        display-hint: ipv4-or-v6
+        value: 1
+
 operations:
   enum-model: directional
   name-prefix: rtm-
@@ -147,3 +220,25 @@ operations:
           attributes:
             - mdb
             - router
+    -
+      name: newmdb
+      doc: Add a multicast database entry
+      fixed-header: br-port-msg
+      attribute-set: mdba-set-entry-attrs
+      do:
+        request:
+          value: 84
+          attributes: &mdb-set-all
+            - set-entry
+            - set-entry-attrs
+    -
+      name: delmdb
+      doc: >-
+        Delete a multicast database entry, or with NLM_F_BULK, all entries
+        that match the filter.
+      fixed-header: br-port-msg
+      attribute-set: mdba-set-entry-attrs
+      do:
+        request:
+          value: 85
+          attributes: *mdb-set-all
