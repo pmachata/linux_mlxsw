@@ -66,6 +66,7 @@ TEST_PROGS := \
 	link_netns.py \
 	lwt_dst_cache_ref_loop.sh \
 	macvlan_mcast_shared_mac.sh \
+	mdb_notify_portid.py \
 	msg_zerocopy.sh \
 	nat6to4.sh \
 	ndisc_unsolicited_na_test.sh \
