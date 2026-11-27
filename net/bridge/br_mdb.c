@@ -416,13 +416,13 @@ static int nlmsg_populate_mdb_fill(struct sk_buff *skb,
 				   struct net_device *dev,
 				   struct net_bridge_mdb_entry *mp,
 				   struct net_bridge_port_group *pg,
-				   int type)
+				   int type, u32 portid)
 {
 	struct nlmsghdr *nlh;
 	struct br_port_msg *bpm;
 	struct nlattr *nest, *nest2;
 
-	nlh = nlmsg_put(skb, 0, 0, type, sizeof(*bpm), 0);
+	nlh = nlmsg_put(skb, portid, 0, type, sizeof(*bpm), 0);
 	if (!nlh)
 		return -EMSGSIZE;
 
@@ -522,7 +522,7 @@ static size_t rtnl_mdb_nlmsg_size(const struct net_bridge_port_group *pg)
 static void __br_mdb_notify(struct net_device *dev,
 			    struct net_bridge_mdb_entry *mp,
 			    struct net_bridge_port_group *pg,
-			    int type, bool notify_switchdev)
+			    int type, u32 portid, bool notify_switchdev)
 {
 	struct net *net = dev_net(dev);
 	struct sk_buff *skb;
@@ -535,7 +535,7 @@ static void __br_mdb_notify(struct net_device *dev,
 	if (!skb)
 		goto errout;
 
-	err = nlmsg_populate_mdb_fill(skb, dev, mp, pg, type);
+	err = nlmsg_populate_mdb_fill(skb, dev, mp, pg, type, portid);
 	if (err < 0) {
 		kfree_skb(skb);
 		goto errout;
@@ -550,16 +550,16 @@ errout:
 void br_mdb_notify(struct net_device *dev,
 		   struct net_bridge_mdb_entry *mp,
 		   struct net_bridge_port_group *pg,
-		   int type)
+		   int type, u32 portid)
 {
-	__br_mdb_notify(dev, mp, pg, type, true);
+	__br_mdb_notify(dev, mp, pg, type, portid, true);
 }
 
 void br_mdb_flag_change_notify(struct net_device *dev,
 			       struct net_bridge_mdb_entry *mp,
 			       struct net_bridge_port_group *pg)
 {
-	__br_mdb_notify(dev, mp, pg, RTM_NEWMDB, false);
+	__br_mdb_notify(dev, mp, pg, RTM_NEWMDB, 0, false);
 }
 
 static int nlmsg_populate_rtr_fill(struct sk_buff *skb,
@@ -752,7 +752,7 @@ static int br_mdb_replace_group_sg(const struct br_mdb_config *cfg,
 	else
 		timer_delete(&pg->timer);
 
-	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB);
+	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB, cfg->portid);
 
 	return 0;
 }
@@ -791,7 +791,7 @@ static int br_mdb_add_group_sg(const struct br_mdb_config *cfg,
 	if (!(flags & MDB_PG_FLAGS_PERMANENT) && !cfg->src_entry)
 		mod_timer(&p->timer,
 			  now + brmctx->multicast_membership_interval);
-	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB);
+	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB, cfg->portid);
 
 	/* All of (*, G) EXCLUDE ports need to be added to the new (S, G) for
 	 * proper replication.
@@ -980,7 +980,7 @@ static int br_mdb_replace_group_star_g(const struct br_mdb_config *cfg,
 	else
 		timer_delete(&pg->timer);
 
-	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB);
+	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB, cfg->portid);
 
 	if (br_multicast_should_handle_mode(brmctx, cfg->group.proto))
 		br_multicast_star_g_handle_mode(pg, cfg->filter_mode,
@@ -1030,7 +1030,7 @@ static int br_mdb_add_group_star_g(const struct br_mdb_config *cfg,
 	    cfg->filter_mode == MCAST_EXCLUDE)
 		mod_timer(&p->timer,
 			  now + brmctx->multicast_membership_interval);
-	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB);
+	br_mdb_notify(cfg->br->dev, mp, p, RTM_NEWMDB, cfg->portid);
 	/* If we are adding a new EXCLUDE port group (*, G), it needs to be
 	 * also added to all (S, G) entries for proper replication.
 	 */
@@ -1074,7 +1074,7 @@ static int br_mdb_add_group(const struct br_mdb_config *cfg,
 		}
 
 		br_multicast_host_join(brmctx, mp, false);
-		br_mdb_notify(br->dev, mp, NULL, RTM_NEWMDB);
+		br_mdb_notify(br->dev, mp, NULL, RTM_NEWMDB, cfg->portid);
 
 		return 0;
 	}
@@ -1389,7 +1389,7 @@ static int __br_mdb_del(const struct br_mdb_config *cfg)
 	if (entry->ifindex == mp->br->dev->ifindex && mp->host_joined) {
 		br_multicast_host_leave(mp, false, 0);
 		err = 0;
-		br_mdb_notify(br->dev, mp, NULL, RTM_DELMDB);
+		br_mdb_notify(br->dev, mp, NULL, RTM_DELMDB, cfg->portid);
 		if (!mp->ports && netif_running(br->dev))
 			mod_timer(&mp->timer, jiffies);
 		goto unlock;

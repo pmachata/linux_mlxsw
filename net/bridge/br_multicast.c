@@ -625,7 +625,7 @@ static void br_multicast_fwd_src_handle(struct net_bridge_group_src *src)
 		sg_mp = br_mdb_ip_get(src->br, &sg_key.addr);
 		if (!sg_mp)
 			return;
-		br_mdb_notify(src->br->dev, sg_mp, sg, RTM_NEWMDB);
+		br_mdb_notify(src->br->dev, sg_mp, sg, RTM_NEWMDB, 0);
 	}
 }
 
@@ -834,7 +834,7 @@ static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 	br_multicast_eht_clean_sets(pg);
 	hlist_for_each_entry_safe(ent, tmp, &pg->src_list, node)
 		br_multicast_del_group_src(ent, false, portid);
-	br_mdb_notify(br->dev, mp, pg, RTM_DELMDB);
+	br_mdb_notify(br->dev, mp, pg, RTM_DELMDB, portid);
 	if (!br_multicast_is_star_g(&mp->addr)) {
 		rhashtable_remove_fast(&br->sg_port_tbl, &pg->rhnode,
 				       br_sg_port_rht_params);
@@ -922,7 +922,7 @@ static void br_multicast_port_group_expired(struct timer_list *t)
 
 		if (WARN_ON(!mp))
 			goto out;
-		br_mdb_notify(br->dev, mp, pg, RTM_NEWMDB);
+		br_mdb_notify(br->dev, mp, pg, RTM_NEWMDB, 0);
 	}
 out:
 	spin_unlock(&br->multicast_lock);
@@ -1509,7 +1509,7 @@ void br_multicast_host_join(const struct net_bridge_mcast *brmctx,
 		if (br_multicast_is_star_g(&mp->addr))
 			br_multicast_star_g_host_state(mp);
 		if (notify)
-			br_mdb_notify(mp->br->dev, mp, NULL, RTM_NEWMDB);
+			br_mdb_notify(mp->br->dev, mp, NULL, RTM_NEWMDB, 0);
 	}
 
 	if (br_group_is_l2(&mp->addr))
@@ -1528,7 +1528,7 @@ void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify,
 	if (br_multicast_is_star_g(&mp->addr))
 		br_multicast_star_g_host_state(mp);
 	if (notify)
-		br_mdb_notify(mp->br->dev, mp, NULL, RTM_DELMDB);
+		br_mdb_notify(mp->br->dev, mp, NULL, RTM_DELMDB, portid);
 }
 
 static struct net_bridge_port_group *
@@ -1576,7 +1576,7 @@ __br_multicast_add_group(struct net_bridge_mcast *brmctx,
 	rcu_assign_pointer(*pp, p);
 	if (blocked)
 		p->flags |= MDB_PG_FLAGS_BLOCKED;
-	br_mdb_notify(brmctx->br->dev, mp, p, RTM_NEWMDB);
+	br_mdb_notify(brmctx->br->dev, mp, p, RTM_NEWMDB, portid);
 
 found:
 	if (igmpv2_mldv1)
@@ -3054,7 +3054,7 @@ static int br_ip4_multicast_igmp3_report(struct net_bridge_mcast *brmctx,
 			break;
 		}
 		if (changed)
-			br_mdb_notify(brmctx->br->dev, mdst, pg, RTM_NEWMDB);
+			br_mdb_notify(brmctx->br->dev, mdst, pg, RTM_NEWMDB, 0);
 unlock_continue:
 		spin_unlock(&brmctx->br->multicast_lock);
 	}
@@ -3196,7 +3196,7 @@ static int br_ip6_multicast_mld2_report(struct net_bridge_mcast *brmctx,
 			break;
 		}
 		if (changed)
-			br_mdb_notify(brmctx->br->dev, mdst, pg, RTM_NEWMDB);
+			br_mdb_notify(brmctx->br->dev, mdst, pg, RTM_NEWMDB, 0);
 unlock_continue:
 		spin_unlock(&brmctx->br->multicast_lock);
 	}
