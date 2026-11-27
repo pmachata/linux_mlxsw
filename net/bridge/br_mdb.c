@@ -893,14 +893,14 @@ err_del_sg:
 }
 
 static void br_mdb_del_group_src(struct net_bridge_port_group *pg,
-				 struct br_mdb_src_entry *src)
+				 struct br_mdb_src_entry *src, u32 portid)
 {
 	struct net_bridge_group_src *ent;
 
 	ent = br_multicast_find_group_src(pg, &src->addr);
 	if (WARN_ON_ONCE(!ent))
 		return;
-	br_multicast_del_group_src(ent, false);
+	br_multicast_del_group_src(ent, false, portid);
 }
 
 static int br_mdb_add_group_srcs(const struct br_mdb_config *cfg,
@@ -921,7 +921,7 @@ static int br_mdb_add_group_srcs(const struct br_mdb_config *cfg,
 
 err_del_group_srcs:
 	for (i--; i >= 0; i--)
-		br_mdb_del_group_src(pg, &cfg->src_entries[i]);
+		br_mdb_del_group_src(pg, &cfg->src_entries[i], cfg->portid);
 	return err;
 }
 
@@ -943,7 +943,7 @@ static int br_mdb_replace_group_srcs(const struct br_mdb_config *cfg,
 
 	hlist_for_each_entry_safe(ent, tmp, &pg->src_list, node) {
 		if (ent->flags & BR_SGRP_F_DELETE)
-			br_multicast_del_group_src(ent, false);
+			br_multicast_del_group_src(ent, false, cfg->portid);
 	}
 
 	return 0;
@@ -981,7 +981,8 @@ static int br_mdb_replace_group_star_g(const struct br_mdb_config *cfg,
 	br_mdb_notify(cfg->br->dev, mp, pg, RTM_NEWMDB);
 
 	if (br_multicast_should_handle_mode(brmctx, cfg->group.proto))
-		br_multicast_star_g_handle_mode(pg, cfg->filter_mode);
+		br_multicast_star_g_handle_mode(pg, cfg->filter_mode,
+						cfg->portid);
 
 	return 0;
 }
@@ -1033,7 +1034,8 @@ static int br_mdb_add_group_star_g(const struct br_mdb_config *cfg,
 	 */
 	if (br_multicast_should_handle_mode(brmctx, cfg->group.proto) &&
 	    cfg->filter_mode == MCAST_EXCLUDE)
-		br_multicast_star_g_handle_mode(p, MCAST_EXCLUDE);
+		br_multicast_star_g_handle_mode(p, MCAST_EXCLUDE,
+						cfg->portid);
 
 	return 0;
 
@@ -1397,7 +1399,7 @@ static int __br_mdb_del(const struct br_mdb_config *cfg)
 		if (!p->key.port || p->key.port->dev->ifindex != entry->ifindex)
 			continue;
 
-		br_multicast_del_pg(mp, p, pp);
+		br_multicast_del_pg(mp, p, pp, cfg->portid);
 		err = 0;
 		break;
 	}
@@ -1534,7 +1536,7 @@ static void br_mdb_flush_pgs(struct net_bridge *br,
 			continue;
 		}
 
-		br_multicast_del_pg(mp, p, pp);
+		br_multicast_del_pg(mp, p, pp, desc->portid);
 		/* br_multicast_del_pg() can remove other groups from this list. */
 		pp = &mp->ports;
 	}

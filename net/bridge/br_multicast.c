@@ -80,11 +80,12 @@ __br_multicast_add_group(struct net_bridge_mcast *brmctx,
 			 bool igmpv2_mldv1,
 			 bool blocked);
 static void br_multicast_find_del_pg(struct net_bridge *br,
-				     struct net_bridge_port_group *pg);
+				     struct net_bridge_port_group *pg,
+				     u32 portid);
 static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 				  struct net_bridge_port_group *pg,
 				  struct net_bridge_port_group __rcu **pp,
-				  bool sg_del_exclude_ports);
+				  bool sg_del_exclude_ports, u32 portid);
 static void __br_multicast_stop(struct net_bridge_mcast *brmctx);
 
 static int br_mc_disabled_update(struct net_device *dev, bool value,
@@ -317,7 +318,7 @@ static void __fwd_add_star_excl(struct net_bridge_mcast_port *pmctx,
 }
 
 static void __fwd_del_star_excl(struct net_bridge_port_group *pg,
-				struct br_ip *sg_ip)
+				struct br_ip *sg_ip, u32 portid)
 {
 	struct net_bridge_port_group_sg_key sg_key;
 	struct net_bridge *br = pg->key.port->br;
@@ -331,7 +332,7 @@ static void __fwd_del_star_excl(struct net_bridge_port_group *pg,
 	    src_pg->rt_protocol != RTPROT_KERNEL)
 		return;
 
-	br_multicast_find_del_pg(br, src_pg);
+	br_multicast_find_del_pg(br, src_pg, portid);
 }
 
 /* When a port group transitions to (or is added as) EXCLUDE we need to add it
@@ -343,7 +344,7 @@ static void __fwd_del_star_excl(struct net_bridge_port_group *pg,
  * automatically installed before (i.e. where it's MDB_PG_FLAGS_STAR_EXCL).
  */
 void br_multicast_star_g_handle_mode(struct net_bridge_port_group *pg,
-				     u8 filter_mode)
+				     u8 filter_mode, u32 portid)
 {
 	struct net_bridge *br = pg->key.port->br;
 	struct net_bridge_port_group *pg_lst;
@@ -377,7 +378,7 @@ void br_multicast_star_g_handle_mode(struct net_bridge_port_group *pg,
 			sg_ip.src = src_ent->addr.src;
 			switch (filter_mode) {
 			case MCAST_INCLUDE:
-				__fwd_del_star_excl(pg, &sg_ip);
+				__fwd_del_star_excl(pg, &sg_ip, portid);
 				break;
 			case MCAST_EXCLUDE:
 				__fwd_add_star_excl(pmctx, pg, &sg_ip);
@@ -434,7 +435,8 @@ static void br_multicast_star_g_host_state(struct net_bridge_mdb_entry *star_mp)
 	}
 }
 
-static void br_multicast_sg_del_exclude_ports(struct net_bridge_mdb_entry *sgmp)
+static void br_multicast_sg_del_exclude_ports(struct net_bridge_mdb_entry *sgmp,
+					      u32 portid)
 {
 	struct net_bridge_port_group __rcu **pp;
 	struct net_bridge_port_group *p;
@@ -462,7 +464,7 @@ static void br_multicast_sg_del_exclude_ports(struct net_bridge_mdb_entry *sgmp)
 	for (pp = &sgmp->ports;
 	     (p = mlock_dereference(*pp, sgmp->br)) != NULL;) {
 		if (!(p->flags & MDB_PG_FLAGS_PERMANENT))
-			__br_multicast_del_pg(sgmp, p, pp, false);
+			__br_multicast_del_pg(sgmp, p, pp, false, portid);
 		else
 			pp = &p->next;
 	}
@@ -556,7 +558,7 @@ static void br_multicast_fwd_src_add(struct net_bridge_group_src *src)
 }
 
 static void br_multicast_fwd_src_remove(struct net_bridge_group_src *src,
-					bool fastleave)
+					bool fastleave, u32 portid)
 {
 	struct net_bridge_port_group *p, *pg = src->pg;
 	struct net_bridge_port_group __rcu **pp;
@@ -584,7 +586,7 @@ static void br_multicast_fwd_src_remove(struct net_bridge_group_src *src,
 
 		if (fastleave)
 			p->flags |= MDB_PG_FLAGS_FAST_LEAVE;
-		br_multicast_del_pg(mp, p, pp);
+		br_multicast_del_pg(mp, p, pp, portid);
 		break;
 	}
 	src->flags &= ~BR_SGRP_F_INSTALLED;
@@ -696,9 +698,9 @@ void __br_multicast_del_group_src(struct net_bridge_group_src *src)
 }
 
 void br_multicast_del_group_src(struct net_bridge_group_src *src,
-				bool fastleave)
+				bool fastleave, u32 portid)
 {
-	br_multicast_fwd_src_remove(src, fastleave);
+	br_multicast_fwd_src_remove(src, fastleave, portid);
 	__br_multicast_del_group_src(src);
 }
 
@@ -814,7 +816,7 @@ static void br_multicast_destroy_port_group(struct net_bridge_mcast_gc *gc)
 static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 				  struct net_bridge_port_group *pg,
 				  struct net_bridge_port_group __rcu **pp,
-				  bool sg_del_exclude_ports)
+				  bool sg_del_exclude_ports, u32 portid)
 {
 	struct net_bridge *br = pg->key.port->br;
 	struct net_bridge_group_src *ent;
@@ -828,15 +830,15 @@ static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 	hlist_del_init_rcu(&pg->mglist);
 	br_multicast_eht_clean_sets(pg);
 	hlist_for_each_entry_safe(ent, tmp, &pg->src_list, node)
-		br_multicast_del_group_src(ent, false);
+		br_multicast_del_group_src(ent, false, portid);
 	br_mdb_notify(br->dev, mp, pg, RTM_DELMDB);
 	if (!br_multicast_is_star_g(&mp->addr)) {
 		rhashtable_remove_fast(&br->sg_port_tbl, &pg->rhnode,
 				       br_sg_port_rht_params);
 		if (sg_del_exclude_ports)
-			br_multicast_sg_del_exclude_ports(mp);
+			br_multicast_sg_del_exclude_ports(mp, portid);
 	} else {
-		br_multicast_star_g_handle_mode(pg, MCAST_INCLUDE);
+		br_multicast_star_g_handle_mode(pg, MCAST_INCLUDE, portid);
 	}
 	br_multicast_port_ngroups_dec(pg->key.port, pg->key.addr.vid);
 	hlist_add_head(&pg->mcast_gc.gc_node, &br->mcast_gc_list);
@@ -848,13 +850,14 @@ static void __br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 
 void br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 			 struct net_bridge_port_group *pg,
-			 struct net_bridge_port_group __rcu **pp)
+			 struct net_bridge_port_group __rcu **pp, u32 portid)
 {
-	__br_multicast_del_pg(mp, pg, pp, true);
+	__br_multicast_del_pg(mp, pg, pp, true, portid);
 }
 
 static void br_multicast_find_del_pg(struct net_bridge *br,
-				     struct net_bridge_port_group *pg)
+				     struct net_bridge_port_group *pg,
+				     u32 portid)
 {
 	struct net_bridge_port_group __rcu **pp;
 	struct net_bridge_mdb_entry *mp;
@@ -877,7 +880,7 @@ static void br_multicast_find_del_pg(struct net_bridge *br,
 		if (p != pg)
 			continue;
 
-		br_multicast_del_pg(mp, pg, pp);
+		br_multicast_del_pg(mp, pg, pp, portid);
 		return;
 	}
 
@@ -901,18 +904,18 @@ static void br_multicast_port_group_expired(struct timer_list *t)
 	pg->filter_mode = MCAST_INCLUDE;
 	hlist_for_each_entry_safe(src_ent, tmp, &pg->src_list, node) {
 		if (!timer_pending(&src_ent->timer)) {
-			br_multicast_del_group_src(src_ent, false);
+			br_multicast_del_group_src(src_ent, false, 0);
 			changed = true;
 		}
 	}
 
 	if (hlist_empty(&pg->src_list)) {
-		br_multicast_find_del_pg(br, pg);
+		br_multicast_find_del_pg(br, pg, 0);
 	} else if (changed) {
 		struct net_bridge_mdb_entry *mp = br_mdb_ip_get(br, &pg->key.addr);
 
 		if (changed && br_multicast_is_star_g(&pg->key.addr))
-			br_multicast_star_g_handle_mode(pg, MCAST_INCLUDE);
+			br_multicast_star_g_handle_mode(pg, MCAST_INCLUDE, 0);
 
 		if (WARN_ON(!mp))
 			goto out;
@@ -1348,10 +1351,10 @@ static void br_multicast_group_src_expired(struct timer_list *t)
 
 	pg = src->pg;
 	if (pg->filter_mode == MCAST_INCLUDE) {
-		br_multicast_del_group_src(src, false);
+		br_multicast_del_group_src(src, false, 0);
 		if (!hlist_empty(&pg->src_list))
 			goto out;
-		br_multicast_find_del_pg(br, pg);
+		br_multicast_find_del_pg(br, pg, 0);
 	} else {
 		br_multicast_fwd_src_handle(src);
 	}
@@ -2165,7 +2168,7 @@ void br_multicast_del_port(struct net_bridge_port *port)
 	/* Take care of the remaining groups, only perm ones should be left */
 	spin_lock_bh(&br->multicast_lock);
 	hlist_for_each_entry_safe(pg, n, &port->mglist, mglist)
-		br_multicast_find_del_pg(br, pg);
+		br_multicast_find_del_pg(br, pg, 0);
 	spin_unlock_bh(&br->multicast_lock);
 	flush_work(&br->mcast_gc_work);
 	br_multicast_port_ctx_deinit(&port->multicast_ctx);
@@ -2225,7 +2228,7 @@ static void __br_multicast_disable_port_ctx(struct net_bridge_mcast_port *pmctx)
 		if (!(pg->flags & MDB_PG_FLAGS_PERMANENT) &&
 		    (!br_multicast_port_ctx_is_vlan(pmctx) ||
 		     pg->key.addr.vid == pmctx->vlan->vid))
-			br_multicast_find_del_pg(pmctx->port->br, pg);
+			br_multicast_find_del_pg(pmctx->port->br, pg, 0);
 
 	del |= br_ip4_multicast_rport_del(pmctx);
 	timer_delete(&pmctx->ip4_mc_router_timer);
@@ -2309,7 +2312,7 @@ static int __grp_src_delete_marked(struct net_bridge_port_group *pg)
 
 	hlist_for_each_entry_safe(ent, tmp, &pg->src_list, node)
 		if (ent->flags & BR_SGRP_F_DELETE) {
-			br_multicast_del_group_src(ent, false);
+			br_multicast_del_group_src(ent, false, 0);
 			deleted++;
 		}
 
@@ -2537,7 +2540,7 @@ static bool br_multicast_isexc(const struct net_bridge_mcast *brmctx,
 	case MCAST_INCLUDE:
 		__grp_src_isexc_incl(brmctx, pg, h_addr, srcs, nsrcs, addr_size,
 				     grec_type);
-		br_multicast_star_g_handle_mode(pg, MCAST_EXCLUDE);
+		br_multicast_star_g_handle_mode(pg, MCAST_EXCLUDE, 0);
 		changed = true;
 		break;
 	case MCAST_EXCLUDE:
@@ -2671,7 +2674,7 @@ static bool br_multicast_toin(struct net_bridge_mcast *brmctx,
 
 	if (br_multicast_eht_should_del_pg(pg)) {
 		pg->flags |= MDB_PG_FLAGS_FAST_LEAVE;
-		br_multicast_find_del_pg(pg->key.port->br, pg);
+		br_multicast_find_del_pg(pg->key.port->br, pg, 0);
 		/* a notification has already been sent and we shouldn't
 		 * access pg after the delete so we have to return false
 		 */
@@ -2789,7 +2792,7 @@ static bool br_multicast_toex(struct net_bridge_mcast *brmctx,
 	case MCAST_INCLUDE:
 		__grp_src_toex_incl(brmctx, pmctx, pg, h_addr, srcs, nsrcs,
 				    addr_size, grec_type);
-		br_multicast_star_g_handle_mode(pg, MCAST_EXCLUDE);
+		br_multicast_star_g_handle_mode(pg, MCAST_EXCLUDE, 0);
 		changed = true;
 		break;
 	case MCAST_EXCLUDE:
@@ -2908,7 +2911,7 @@ static bool br_multicast_block(struct net_bridge_mcast *brmctx,
 	    br_multicast_eht_should_del_pg(pg)) {
 		if (br_multicast_eht_should_del_pg(pg))
 			pg->flags |= MDB_PG_FLAGS_FAST_LEAVE;
-		br_multicast_find_del_pg(pg->key.port->br, pg);
+		br_multicast_find_del_pg(pg->key.port->br, pg, 0);
 		/* a notification has already been sent and we shouldn't
 		 * access pg after the delete so we have to return false
 		 */
@@ -3781,7 +3784,7 @@ br_multicast_leave_group(struct net_bridge_mcast *brmctx,
 				break;
 
 			p->flags |= MDB_PG_FLAGS_FAST_LEAVE;
-			br_multicast_del_pg(mp, p, pp);
+			br_multicast_del_pg(mp, p, pp, 0);
 			break;
 		}
 		goto out;

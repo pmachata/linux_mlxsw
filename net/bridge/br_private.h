@@ -1163,7 +1163,7 @@ void br_rtr_notify(struct net_device *dev, struct net_bridge_mcast_port *pmctx,
 		   int type);
 void br_multicast_del_pg(struct net_bridge_mdb_entry *mp,
 			 struct net_bridge_port_group *pg,
-			 struct net_bridge_port_group __rcu **pp);
+			 struct net_bridge_port_group __rcu **pp, u32 portid);
 void br_multicast_count(struct net_bridge *br,
 			const struct net_bridge_port *p,
 			const struct sk_buff *skb, u8 type, u8 dir);
@@ -1190,7 +1190,7 @@ void br_multicast_host_join(const struct net_bridge_mcast *brmctx,
 void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify,
 			     u32 portid);
 void br_multicast_star_g_handle_mode(struct net_bridge_port_group *pg,
-				     u8 filter_mode);
+				     u8 filter_mode, u32 portid);
 void br_multicast_sg_add_exclude_ports(struct net_bridge_mdb_entry *star_mp,
 				       struct net_bridge_port_group *sg);
 struct net_bridge_group_src *
@@ -1200,7 +1200,7 @@ br_multicast_new_group_src(struct net_bridge_port_group *pg,
 			   struct br_ip *src_ip);
 void __br_multicast_del_group_src(struct net_bridge_group_src *src);
 void br_multicast_del_group_src(struct net_bridge_group_src *src,
-				bool fastleave);
+				bool fastleave, u32 portid);
 void br_multicast_ctx_init(struct net_bridge *br,
 			   struct net_bridge_vlan *vlan,
 			   struct net_bridge_mcast *brmctx);
