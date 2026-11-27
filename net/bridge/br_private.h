@@ -1192,7 +1192,8 @@ void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify,
 void br_multicast_star_g_handle_mode(struct net_bridge_port_group *pg,
 				     u8 filter_mode, u32 portid);
 void br_multicast_sg_add_exclude_ports(struct net_bridge_mdb_entry *star_mp,
-				       struct net_bridge_port_group *sg);
+				       struct net_bridge_port_group *sg,
+				       u32 portid);
 struct net_bridge_group_src *
 br_multicast_find_group_src(struct net_bridge_port_group *pg, struct br_ip *ip);
 struct net_bridge_group_src *

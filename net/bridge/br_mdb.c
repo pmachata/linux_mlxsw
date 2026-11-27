@@ -804,7 +804,8 @@ static int br_mdb_add_group_sg(const struct br_mdb_config *cfg,
 		memset(&star_group.src, 0, sizeof(star_group.src));
 		star_mp = br_mdb_ip_get(cfg->br, &star_group);
 		if (star_mp)
-			br_multicast_sg_add_exclude_ports(star_mp, p);
+			br_multicast_sg_add_exclude_ports(star_mp, p,
+							  cfg->portid);
 	}
 
 	return 0;
@@ -843,6 +844,7 @@ static int br_mdb_add_group_src_fwd(const struct br_mdb_config *cfg,
 	sg_cfg.filter_mode = MCAST_INCLUDE;
 	sg_cfg.rt_protocol = cfg->rt_protocol;
 	sg_cfg.nlflags = cfg->nlflags;
+	sg_cfg.portid = cfg->portid;
 	err = br_mdb_add_group_sg(&sg_cfg, sgmp, brmctx, flags, extack);
 	if (err)
 		br_multicast_del_group(sgmp);

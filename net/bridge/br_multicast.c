@@ -78,7 +78,7 @@ __br_multicast_add_group(struct net_bridge_mcast *brmctx,
 			 const unsigned char *src,
 			 u8 filter_mode,
 			 bool igmpv2_mldv1,
-			 bool blocked);
+			 bool blocked, u32 portid);
 static void br_multicast_find_del_pg(struct net_bridge *br,
 				     struct net_bridge_port_group *pg,
 				     u32 portid);
@@ -294,7 +294,7 @@ static bool br_port_group_equal(struct net_bridge_port_group *p,
 
 static void __fwd_add_star_excl(struct net_bridge_mcast_port *pmctx,
 				struct net_bridge_port_group *pg,
-				struct br_ip *sg_ip)
+				struct br_ip *sg_ip, u32 portid)
 {
 	struct net_bridge_port_group_sg_key sg_key;
 	struct net_bridge_port_group *src_pg;
@@ -309,7 +309,8 @@ static void __fwd_add_star_excl(struct net_bridge_mcast_port *pmctx,
 
 	src_pg = __br_multicast_add_group(brmctx, pmctx,
 					  sg_ip, pg->eth_addr,
-					  MCAST_INCLUDE, false, false);
+					  MCAST_INCLUDE, false, false,
+					  portid);
 	if (IS_ERR_OR_NULL(src_pg) ||
 	    src_pg->rt_protocol != RTPROT_KERNEL)
 		return;
@@ -381,7 +382,7 @@ void br_multicast_star_g_handle_mode(struct net_bridge_port_group *pg,
 				__fwd_del_star_excl(pg, &sg_ip, portid);
 				break;
 			case MCAST_EXCLUDE:
-				__fwd_add_star_excl(pmctx, pg, &sg_ip);
+				__fwd_add_star_excl(pmctx, pg, &sg_ip, portid);
 				break;
 			}
 		}
@@ -471,7 +472,8 @@ static void br_multicast_sg_del_exclude_ports(struct net_bridge_mdb_entry *sgmp,
 }
 
 void br_multicast_sg_add_exclude_ports(struct net_bridge_mdb_entry *star_mp,
-				       struct net_bridge_port_group *sg)
+				       struct net_bridge_port_group *sg,
+				       u32 portid)
 {
 	struct net_bridge_port_group_sg_key sg_key;
 	struct net_bridge *br = star_mp->br;
@@ -508,7 +510,8 @@ void br_multicast_sg_add_exclude_ports(struct net_bridge_mdb_entry *star_mp,
 		src_pg = __br_multicast_add_group(brmctx, pmctx,
 						  &sg->key.addr,
 						  sg->eth_addr,
-						  MCAST_INCLUDE, false, false);
+						  MCAST_INCLUDE, false, false,
+						  portid);
 		if (IS_ERR_OR_NULL(src_pg) ||
 		    src_pg->rt_protocol != RTPROT_KERNEL)
 			continue;
@@ -537,7 +540,7 @@ static void br_multicast_fwd_src_add(struct net_bridge_group_src *src)
 
 	sg = __br_multicast_add_group(brmctx, pmctx, &sg_ip,
 				      src->pg->eth_addr, MCAST_INCLUDE, false,
-				      !timer_pending(&src->timer));
+				      !timer_pending(&src->timer), 0);
 	if (IS_ERR_OR_NULL(sg))
 		return;
 	src->flags |= BR_SGRP_F_INSTALLED;
@@ -554,7 +557,7 @@ static void br_multicast_fwd_src_add(struct net_bridge_group_src *src)
 	if (!star_mp)
 		return;
 
-	br_multicast_sg_add_exclude_ports(star_mp, sg);
+	br_multicast_sg_add_exclude_ports(star_mp, sg, 0);
 }
 
 static void br_multicast_fwd_src_remove(struct net_bridge_group_src *src,
@@ -1535,7 +1538,7 @@ __br_multicast_add_group(struct net_bridge_mcast *brmctx,
 			 const unsigned char *src,
 			 u8 filter_mode,
 			 bool igmpv2_mldv1,
-			 bool blocked)
+			 bool blocked, u32 portid)
 {
 	struct net_bridge_port_group __rcu **pp;
 	struct net_bridge_port_group *p = NULL;
@@ -1596,7 +1599,7 @@ static int br_multicast_add_group(struct net_bridge_mcast *brmctx,
 
 	spin_lock(&brmctx->br->multicast_lock);
 	pg = __br_multicast_add_group(brmctx, pmctx, group, src, filter_mode,
-				      igmpv2_mldv1, false);
+				      igmpv2_mldv1, false, 0);
 	/* NULL is considered valid for host joined groups */
 	err = PTR_ERR_OR_ZERO(pg);
 	spin_unlock(&brmctx->br->multicast_lock);
