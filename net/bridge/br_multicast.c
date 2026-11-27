@@ -665,7 +665,7 @@ static void br_multicast_group_expired(struct timer_list *t)
 	    timer_pending(&mp->timer))
 		goto out;
 
-	br_multicast_host_leave(mp, true);
+	br_multicast_host_leave(mp, true, 0);
 
 	if (mp->ports)
 		goto out;
@@ -1512,7 +1512,8 @@ void br_multicast_host_join(const struct net_bridge_mcast *brmctx,
 	mod_timer(&mp->timer, jiffies + brmctx->multicast_membership_interval);
 }
 
-void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify)
+void br_multicast_host_leave(struct net_bridge_mdb_entry *mp, bool notify,
+			     u32 portid)
 {
 	if (!mp->host_joined)
 		return;
