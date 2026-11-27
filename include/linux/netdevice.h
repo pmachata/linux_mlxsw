@@ -1375,8 +1375,9 @@ struct ndo_fdb_parms {
  *	Deletes the MDB entry from dev. PORTID is the netlink port ID of the
  *	requester, and should be used for any resulting notifications.
  * int (*ndo_mdb_del_bulk)(struct net_device *dev, struct nlattr *tb[],
- *			   struct netlink_ext_ack *extack);
- *	Bulk deletes MDB entries from dev.
+ *			   u32 portid, struct netlink_ext_ack *extack);
+ *	Bulk deletes MDB entries from dev. PORTID is the netlink port ID of
+ *	the requester, and should be used for any resulting notifications.
  * int (*ndo_mdb_dump)(struct net_device *dev, struct sk_buff *skb,
  *		       struct netlink_callback *cb);
  *	Dumps MDB entries from dev. The first argument (marker) in the netlink
@@ -1664,6 +1665,7 @@ struct net_device_ops {
 					       struct netlink_ext_ack *extack);
 	int			(*ndo_mdb_del_bulk)(struct net_device *dev,
 						    struct nlattr *tb[],
+						    u32 portid,
 						    struct netlink_ext_ack *extack);
 	int			(*ndo_mdb_dump)(struct net_device *dev,
 						struct sk_buff *skb,

@@ -1179,7 +1179,7 @@ int br_mdb_add(struct net_device *dev, struct nlattr *tb[], u32 portid,
 	       u16 nlmsg_flags, struct netlink_ext_ack *extack);
 int br_mdb_del(struct net_device *dev, struct nlattr *tb[], u32 portid,
 	       struct netlink_ext_ack *extack);
-int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[],
+int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[], u32 portid,
 		    struct netlink_ext_ack *extack);
 int br_mdb_dump(struct net_device *dev, struct sk_buff *skb,
 		struct netlink_callback *cb);
@@ -1621,7 +1621,7 @@ static inline int br_mdb_del(struct net_device *dev, struct nlattr *tb[],
 }
 
 static inline int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[],
-				  struct netlink_ext_ack *extack)
+				  u32 portid, struct netlink_ext_ack *extack)
 {
 	return -EOPNOTSUPP;
 }

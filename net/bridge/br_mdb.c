@@ -1443,6 +1443,7 @@ int br_mdb_del(struct net_device *dev, struct nlattr *tb[], u32 portid,
 
 struct br_mdb_flush_desc {
 	u32 port_ifindex;
+	u32 portid;
 	u16 vid;
 	u8 rt_protocol;
 	u8 state;
@@ -1560,11 +1561,11 @@ static void br_mdb_flush(struct net_bridge *br,
 	spin_unlock_bh(&br->multicast_lock);
 }
 
-int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[],
+int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[], u32 portid,
 		    struct netlink_ext_ack *extack)
 {
 	struct net_bridge *br = netdev_priv(dev);
-	struct br_mdb_flush_desc desc = {};
+	struct br_mdb_flush_desc desc = { .portid = portid };
 	int err;
 
 	err = br_mdb_flush_desc_init(&desc, tb, extack);
