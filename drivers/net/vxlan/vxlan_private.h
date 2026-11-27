@@ -251,9 +251,9 @@ int vxlan_igmp_leave(struct vxlan_dev *vxlan, const union vxlan_addr *rip,
 /* vxlan_mdb.c */
 int vxlan_mdb_dump(struct net_device *dev, struct sk_buff *skb,
 		   struct netlink_callback *cb);
-int vxlan_mdb_add(struct net_device *dev, struct nlattr *tb[], u16 nlmsg_flags,
-		  struct netlink_ext_ack *extack);
-int vxlan_mdb_del(struct net_device *dev, struct nlattr *tb[],
+int vxlan_mdb_add(struct net_device *dev, struct nlattr *tb[], u32 portid,
+		  u16 nlmsg_flags, struct netlink_ext_ack *extack);
+int vxlan_mdb_del(struct net_device *dev, struct nlattr *tb[], u32 portid,
 		  struct netlink_ext_ack *extack);
 int vxlan_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[],
 		       struct netlink_ext_ack *extack);

@@ -1239,7 +1239,7 @@ static int br_mdb_config_attrs_init(struct nlattr *set_attrs,
 }
 
 static int br_mdb_config_init(struct br_mdb_config *cfg, struct net_device *dev,
-			      struct nlattr *tb[], u16 nlmsg_flags,
+			      struct nlattr *tb[], u32 portid, u16 nlmsg_flags,
 			      struct netlink_ext_ack *extack)
 {
 	struct net *net = dev_net(dev);
@@ -1248,6 +1248,7 @@ static int br_mdb_config_init(struct br_mdb_config *cfg, struct net_device *dev,
 	cfg->filter_mode = MCAST_EXCLUDE;
 	cfg->rt_protocol = RTPROT_STATIC;
 	cfg->nlflags = nlmsg_flags;
+	cfg->portid = portid;
 
 	cfg->br = netdev_priv(dev);
 
@@ -1304,15 +1305,15 @@ static void br_mdb_config_fini(struct br_mdb_config *cfg)
 	br_mdb_config_src_list_fini(cfg);
 }
 
-int br_mdb_add(struct net_device *dev, struct nlattr *tb[], u16 nlmsg_flags,
-	       struct netlink_ext_ack *extack)
+int br_mdb_add(struct net_device *dev, struct nlattr *tb[], u32 portid,
+	       u16 nlmsg_flags, struct netlink_ext_ack *extack)
 {
 	struct net_bridge_vlan_group *vg;
 	struct net_bridge_vlan *v;
 	struct br_mdb_config cfg;
 	int err;
 
-	err = br_mdb_config_init(&cfg, dev, tb, nlmsg_flags, extack);
+	err = br_mdb_config_init(&cfg, dev, tb, portid, nlmsg_flags, extack);
 	if (err)
 		return err;
 
@@ -1406,7 +1407,7 @@ unlock:
 	return err;
 }
 
-int br_mdb_del(struct net_device *dev, struct nlattr *tb[],
+int br_mdb_del(struct net_device *dev, struct nlattr *tb[], u32 portid,
 	       struct netlink_ext_ack *extack)
 {
 	struct net_bridge_vlan_group *vg;
@@ -1414,7 +1415,7 @@ int br_mdb_del(struct net_device *dev, struct nlattr *tb[],
 	struct br_mdb_config cfg;
 	int err;
 
-	err = br_mdb_config_init(&cfg, dev, tb, 0, extack);
+	err = br_mdb_config_init(&cfg, dev, tb, portid, 0, extack);
 	if (err)
 		return err;
 

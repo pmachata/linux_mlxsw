@@ -1366,11 +1366,14 @@ struct ndo_fdb_parms {
  *	entries to skb and update idx with the number of entries.
  *
  * int (*ndo_mdb_add)(struct net_device *dev, struct nlattr *tb[],
- *		      u16 nlmsg_flags, struct netlink_ext_ack *extack);
- *	Adds an MDB entry to dev.
- * int (*ndo_mdb_del)(struct net_device *dev, struct nlattr *tb[],
+ *		      u32 portid, u16 nlmsg_flags,
  *		      struct netlink_ext_ack *extack);
- *	Deletes the MDB entry from dev.
+ *	Adds an MDB entry to dev. PORTID is the netlink port ID of the
+ *	requester, and should be used for any resulting notifications.
+ * int (*ndo_mdb_del)(struct net_device *dev, struct nlattr *tb[],
+ *		      u32 portid, struct netlink_ext_ack *extack);
+ *	Deletes the MDB entry from dev. PORTID is the netlink port ID of the
+ *	requester, and should be used for any resulting notifications.
  * int (*ndo_mdb_del_bulk)(struct net_device *dev, struct nlattr *tb[],
  *			   struct netlink_ext_ack *extack);
  *	Bulk deletes MDB entries from dev.
@@ -1652,10 +1655,12 @@ struct net_device_ops {
 					       struct netlink_ext_ack *extack);
 	int			(*ndo_mdb_add)(struct net_device *dev,
 					       struct nlattr *tb[],
+					       u32 portid,
 					       u16 nlmsg_flags,
 					       struct netlink_ext_ack *extack);
 	int			(*ndo_mdb_del)(struct net_device *dev,
 					       struct nlattr *tb[],
+					       u32 portid,
 					       struct netlink_ext_ack *extack);
 	int			(*ndo_mdb_del_bulk)(struct net_device *dev,
 						    struct nlattr *tb[],

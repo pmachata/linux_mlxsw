@@ -6944,7 +6944,8 @@ static int rtnl_mdb_add(struct sk_buff *skb, struct nlmsghdr *nlh,
 		return -EOPNOTSUPP;
 	}
 
-	return dev->netdev_ops->ndo_mdb_add(dev, tb, nlh->nlmsg_flags, extack);
+	return dev->netdev_ops->ndo_mdb_add(dev, tb, 0,
+					    nlh->nlmsg_flags, extack);
 }
 
 static int rtnl_validate_mdb_entry_del_bulk(const struct nlattr *attr,
@@ -7038,7 +7039,7 @@ static int rtnl_mdb_del(struct sk_buff *skb, struct nlmsghdr *nlh,
 		return -EOPNOTSUPP;
 	}
 
-	return dev->netdev_ops->ndo_mdb_del(dev, tb, extack);
+	return dev->netdev_ops->ndo_mdb_del(dev, tb, 0, extack);
 }
 
 /* Process one rtnetlink message. */
