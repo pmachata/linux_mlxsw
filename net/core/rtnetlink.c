@@ -6944,7 +6944,7 @@ static int rtnl_mdb_add(struct sk_buff *skb, struct nlmsghdr *nlh,
 		return -EOPNOTSUPP;
 	}
 
-	return dev->netdev_ops->ndo_mdb_add(dev, tb, 0,
+	return dev->netdev_ops->ndo_mdb_add(dev, tb, NETLINK_CB(skb).portid,
 					    nlh->nlmsg_flags, extack);
 }
 
@@ -7031,7 +7031,9 @@ static int rtnl_mdb_del(struct sk_buff *skb, struct nlmsghdr *nlh,
 			NL_SET_ERR_MSG(extack, "Device does not support MDB bulk deletion");
 			return -EOPNOTSUPP;
 		}
-		return dev->netdev_ops->ndo_mdb_del_bulk(dev, tb, 0, extack);
+		return dev->netdev_ops->ndo_mdb_del_bulk(dev, tb,
+							 NETLINK_CB(skb).portid,
+							 extack);
 	}
 
 	if (!dev->netdev_ops->ndo_mdb_del) {
@@ -7039,7 +7041,8 @@ static int rtnl_mdb_del(struct sk_buff *skb, struct nlmsghdr *nlh,
 		return -EOPNOTSUPP;
 	}
 
-	return dev->netdev_ops->ndo_mdb_del(dev, tb, 0, extack);
+	return dev->netdev_ops->ndo_mdb_del(dev, tb, NETLINK_CB(skb).portid,
+					    extack);
 }
 
 /* Process one rtnetlink message. */
